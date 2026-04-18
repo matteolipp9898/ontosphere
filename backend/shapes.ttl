@@ -1,0 +1,123 @@
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix onto:  <http://ontosphere.io/shapes#> .
+
+# ==========================================================================
+# Base SHACL shapes for OntoSphere ontology validation
+# ==========================================================================
+
+# --------------------------------------------------------------------------
+# Shape 1: Every owl:Class must have an rdfs:label
+# --------------------------------------------------------------------------
+onto:ClassLabelShape
+    a sh:NodeShape ;
+    sh:targetClass owl:Class ;
+    sh:property [
+        sh:path rdfs:label ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:severity sh:Violation ;
+        sh:message "Every owl:Class must have at least one rdfs:label." ;
+    ] .
+
+# --------------------------------------------------------------------------
+# Shape 2: Every owl:ObjectProperty must have rdfs:domain and rdfs:range
+# --------------------------------------------------------------------------
+onto:ObjectPropertyShape
+    a sh:NodeShape ;
+    sh:targetClass owl:ObjectProperty ;
+    sh:property [
+        sh:path rdfs:domain ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Every owl:ObjectProperty must declare an rdfs:domain." ;
+    ] ;
+    sh:property [
+        sh:path rdfs:range ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Every owl:ObjectProperty must declare an rdfs:range." ;
+    ] .
+
+# --------------------------------------------------------------------------
+# Shape 3: Every owl:DatatypeProperty must have rdfs:domain and rdfs:range
+# --------------------------------------------------------------------------
+onto:DatatypePropertyShape
+    a sh:NodeShape ;
+    sh:targetClass owl:DatatypeProperty ;
+    sh:property [
+        sh:path rdfs:domain ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Every owl:DatatypeProperty must declare an rdfs:domain." ;
+    ] ;
+    sh:property [
+        sh:path rdfs:range ;
+        sh:minCount 1 ;
+        sh:severity sh:Violation ;
+        sh:message "Every owl:DatatypeProperty must declare an rdfs:range." ;
+    ] .
+
+# --------------------------------------------------------------------------
+# Shape 4: Every rdfs:label must be a non-empty string
+# --------------------------------------------------------------------------
+onto:LabelShape
+    a sh:PropertyShape ;
+    sh:path rdfs:label ;
+    sh:datatype xsd:string ;
+    sh:minLength 1 ;
+    sh:severity sh:Violation ;
+    sh:message "Labels must be non-empty strings." .
+
+# --------------------------------------------------------------------------
+# Shape 5: No orphan classes -- every owl:Class should participate in at
+#           least one relationship (subClassOf, domain, range, or equivalent)
+#
+# Modelled as a WARNING because leaf classes without relationships can be
+# valid in early-stage ontologies.
+# --------------------------------------------------------------------------
+onto:NoOrphanClassShape
+    a sh:NodeShape ;
+    sh:targetClass owl:Class ;
+    sh:or (
+        # Has at least one outgoing rdfs:subClassOf
+        [
+            sh:property [
+                sh:path rdfs:subClassOf ;
+                sh:minCount 1 ;
+            ]
+        ]
+        # Is referenced as rdfs:domain of some property
+        [
+            sh:property [
+                sh:path [ sh:inversePath rdfs:domain ] ;
+                sh:minCount 1 ;
+            ]
+        ]
+        # Is referenced as rdfs:range of some property
+        [
+            sh:property [
+                sh:path [ sh:inversePath rdfs:range ] ;
+                sh:minCount 1 ;
+            ]
+        ]
+        # Has an equivalentClass assertion
+        [
+            sh:property [
+                sh:path owl:equivalentClass ;
+                sh:minCount 1 ;
+            ]
+        ]
+        # Is the target of a subClassOf from another class
+        [
+            sh:property [
+                sh:path [ sh:inversePath rdfs:subClassOf ] ;
+                sh:minCount 1 ;
+            ]
+        ]
+    ) ;
+    sh:severity sh:Warning ;
+    sh:message "Class appears to be orphaned -- it has no relationships to other classes or properties." .

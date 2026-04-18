@@ -1,0 +1,249 @@
+{
+  "nodes": [
+    {
+      "id": "1",
+      "uri": "http://example.org/smartbuilding#Building",
+      "label": "Building",
+      "node_type": "class",
+      "properties": {
+        "name": "string",
+        "address": "string",
+        "gross_floor_area_sqm": "float"
+      },
+      "description": "An intelligent structure with automated building management systems"
+    },
+    {
+      "id": "2",
+      "uri": "http://example.org/smartbuilding#Floor",
+      "label": "Floor",
+      "node_type": "class",
+      "properties": {
+        "floor_number": "integer",
+        "net_usable_area_sqm": "float",
+        "purpose": "string"
+      },
+      "description": "A single storey within a building"
+    },
+    {
+      "id": "3",
+      "uri": "http://example.org/smartbuilding#Room",
+      "label": "Room",
+      "node_type": "class",
+      "properties": {
+        "room_number": "string",
+        "name": "string",
+        "area_sqm": "float",
+        "max_occupancy": "integer",
+        "room_type": "string"
+      },
+      "description": "An enclosed space within a floor, classified by purpose"
+    },
+    {
+      "id": "4",
+      "uri": "http://example.org/smartbuilding#Sensor",
+      "label": "Sensor",
+      "node_type": "class",
+      "properties": {
+        "device_id": "string",
+        "sensor_type": "string",
+        "measurement_unit": "string",
+        "current_reading": "float"
+      },
+      "description": "A device that measures environmental conditions in a room"
+    },
+    {
+      "id": "5",
+      "uri": "http://example.org/smartbuilding#TemperatureSensor",
+      "label": "TemperatureSensor",
+      "node_type": "class",
+      "properties": {
+        "temperature": "float",
+        "calibration_interval": "string"
+      },
+      "description": "A sensor that measures ambient air temperature in degrees Celsius"
+    },
+    {
+      "id": "6",
+      "uri": "http://example.org/smartbuilding#OccupancySensor",
+      "label": "OccupancySensor",
+      "node_type": "class",
+      "properties": {
+        "occupancy": "integer",
+        "detection_technology": "string"
+      },
+      "description": "A sensor that detects the number of people in a room"
+    },
+    {
+      "id": "7",
+      "uri": "http://example.org/smartbuilding#HVACSystem",
+      "label": "HVACSystem",
+      "node_type": "class",
+      "properties": {
+        "model_id": "string",
+        "rated_capacity_kw": "float",
+        "operational_mode": "string",
+        "energy_consumption_kwh": "float"
+      },
+      "description": "A heating, ventilation, and air conditioning system"
+    },
+    {
+      "id": "8",
+      "uri": "http://example.org/smartbuilding#Zone",
+      "label": "Zone",
+      "node_type": "class",
+      "properties": {
+        "target_temperature": "float",
+        "current_temperature": "float"
+      },
+      "description": "A group of adjacent rooms sharing climate control"
+    },
+    {
+      "id": "9",
+      "uri": "http://example.org/smartbuilding#EnergyMeter",
+      "label": "EnergyMeter",
+      "node_type": "class",
+      "properties": {
+        "meter_type": "string",
+        "cumulative_reading": "float",
+        "unit": "string",
+        "timestamp": "datetime"
+      },
+      "description": "A device that tracks energy, water, or gas consumption"
+    },
+    {
+      "id": "10",
+      "uri": "http://example.org/smartbuilding#MaintenanceAlert",
+      "label": "MaintenanceAlert",
+      "node_type": "class",
+      "properties": {
+        "severity": "string",
+        "timestamp": "datetime",
+        "description": "string",
+        "resolution_status": "string"
+      },
+      "description": "An alert generated when a sensor reading exceeds a threshold"
+    }
+  ],
+  "edges": [
+    {
+      "id": "1",
+      "source": "1",
+      "target": "2",
+      "edge_type": "HAS_FLOOR",
+      "properties": {},
+      "label": "hasFloor"
+    },
+    {
+      "id": "2",
+      "source": "2",
+      "target": "3",
+      "edge_type": "CONTAINS_ROOM",
+      "properties": {},
+      "label": "containsRoom"
+    },
+    {
+      "id": "3",
+      "source": "3",
+      "target": "4",
+      "edge_type": "CONTAINS_SENSOR",
+      "properties": {},
+      "label": "containsSensor"
+    },
+    {
+      "id": "4",
+      "source": "5",
+      "target": "4",
+      "edge_type": "SUBCLASS_OF",
+      "properties": {},
+      "label": "subClassOf"
+    },
+    {
+      "id": "5",
+      "source": "6",
+      "target": "4",
+      "edge_type": "SUBCLASS_OF",
+      "properties": {},
+      "label": "subClassOf"
+    },
+    {
+      "id": "6",
+      "source": "7",
+      "target": "8",
+      "edge_type": "SERVES_ZONE",
+      "properties": {},
+      "label": "servesZone"
+    },
+    {
+      "id": "7",
+      "source": "8",
+      "target": "3",
+      "edge_type": "INCLUDES_ROOM",
+      "properties": {},
+      "label": "includesRoom"
+    },
+    {
+      "id": "8",
+      "source": "7",
+      "target": "4",
+      "edge_type": "MONITORS_INPUT",
+      "properties": {},
+      "label": "monitorsInput"
+    },
+    {
+      "id": "9",
+      "source": "1",
+      "target": "9",
+      "edge_type": "HAS_ENERGY_METER",
+      "properties": {},
+      "label": "hasEnergyMeter"
+    },
+    {
+      "id": "10",
+      "source": "2",
+      "target": "9",
+      "edge_type": "HAS_ENERGY_METER",
+      "properties": {},
+      "label": "hasEnergyMeter"
+    },
+    {
+      "id": "11",
+      "source": "4",
+      "target": "10",
+      "edge_type": "TRIGGERS_ALERT",
+      "properties": {},
+      "label": "triggersAlert"
+    },
+    {
+      "id": "12",
+      "source": "7",
+      "target": "10",
+      "edge_type": "TRIGGERS_ALERT",
+      "properties": {},
+      "label": "triggersAlert"
+    },
+    {
+      "id": "13",
+      "source": "1",
+      "target": "7",
+      "edge_type": "HAS_HVAC_SYSTEM",
+      "properties": {},
+      "label": "hasHVACSystem"
+    },
+    {
+      "id": "14",
+      "source": "2",
+      "target": "1",
+      "edge_type": "PART_OF",
+      "properties": {},
+      "label": "partOf"
+    },
+    {
+      "id": "15",
+      "source": "3",
+      "target": "2",
+      "edge_type": "PART_OF",
+      "properties": {},
+      "label": "partOf"
+    }
+  ]
+}

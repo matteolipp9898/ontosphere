@@ -1,0 +1,13 @@
+node_modules
+__pycache__
+.git
+.env
+uploads
+dist
+.venv
+venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+*.egg-info
