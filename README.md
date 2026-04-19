@@ -21,7 +21,11 @@ OntoSphere is an open-source application that transforms unstructured documents 
 
 ## Screenshots
 
-![Graph View](docs/screenshots/graph.png)
+# ![Dashboard](docs/screenshots/dashboard.png)
+# ![Graph Export Formats](docs/screenshots/graph-export-formats.png)
+# ![Graph Search Node](docs/screenshots/search-node.png)
+# ![Version History](docs/screenshots/version-history.png)
+
 
 ## Tech Stack
 
