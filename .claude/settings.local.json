@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(find /home/boricles/develop/projects/ontosphere -type f -not -path '*/.git/*' -not -path '*/node_modules/*' \\\\\\( -name '*.py' -o -name '*.ts' -o -name '*.tsx' -o -name '*.json' -o -name '*.yml' -o -name '*.toml' -o -name '*.md' -o -name '*.html' -o -name '*.css' -o -name '*.js' -o -name '*.ttl' -o -name '*.mako' -o -name '*.ini' -o -name '*.txt' \\\\\\) -exec cat {} +)"
-    ]
-  }
-}
