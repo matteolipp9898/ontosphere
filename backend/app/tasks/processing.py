@@ -154,6 +154,11 @@ async def _process_ontology_async(ontology_id: str) -> dict:
             if ontology is None:
                 raise ValueError(f"Ontology {ontology_id} not found")
 
+            # Capture read-only attributes into locals before any
+            # rollback / refresh cycle can expire the ORM object.
+            ont_description = ontology.description or ""
+            ont_namespace_uri = ontology.namespace_uri
+
             ontology.status = "processing"
             await session.commit()
 
@@ -173,26 +178,39 @@ async def _process_ontology_async(ontology_id: str) -> dict:
             if not documents:
                 logger.warning("No pending documents for ontology %s", ontology_id)
 
+            # Snapshot read-only document attributes into plain dicts so
+            # that a session rollback (which expires every ORM object)
+            # cannot trigger a lazy-load / MissingGreenlet error.
+            doc_snapshots = [
+                {
+                    "id": d.id,
+                    "filename": d.filename,
+                    "file_path": d.file_path,
+                    "content_type": d.content_type,
+                }
+                for d in documents
+            ]
+
             all_entities: list[dict] = []
             all_properties: list[dict] = []
-            total_docs = len(documents) if documents else 1
+            total_docs = len(doc_snapshots) if doc_snapshots else 1
 
             # -------------------------------------------------------
             # 3. Parse, chunk, and extract from each document
             # -------------------------------------------------------
-            for doc_idx, doc in enumerate(documents):
+            for doc_idx, doc_info in enumerate(doc_snapshots):
                 doc_progress_base = 10 + (doc_idx / total_docs) * 60
 
                 _publish_progress(
                     ontology_id,
                     "parsing",
                     doc_progress_base,
-                    f"Parsing document: {doc.filename}",
+                    f"Parsing document: {doc_info['filename']}",
                 )
 
                 try:
                     # 3a. Parse document text
-                    text = parse_document(doc.file_path, doc.content_type)
+                    text = parse_document(doc_info["file_path"], doc_info["content_type"])
 
                     # 3b. Chunk text
                     chunks = chunk_text(text, chunk_size=4000, overlap=200)
@@ -201,7 +219,7 @@ async def _process_ontology_async(ontology_id: str) -> dict:
                         ontology_id,
                         "extracting",
                         doc_progress_base + 10,
-                        f"Extracting from {len(chunks)} chunks ({doc.filename})",
+                        f"Extracting from {len(chunks)} chunks ({doc_info['filename']})",
                     )
 
                     # 3c. Extract entities from each chunk
@@ -209,7 +227,7 @@ async def _process_ontology_async(ontology_id: str) -> dict:
                     for chunk_idx, chunk in enumerate(chunks):
                         chunk_entities = await llm.extract_entities(
                             text=chunk,
-                            domain_context=ontology.description or "",
+                            domain_context=ont_description,
                         )
                         doc_entities.extend(chunk_entities)
 
@@ -218,7 +236,7 @@ async def _process_ontology_async(ontology_id: str) -> dict:
                             provenance = ConceptProvenance(
                                 ontology_id=oid,
                                 concept_uri=entity.get("uri", ""),
-                                document_id=doc.id,
+                                document_id=doc_info["id"],
                                 prompt_text=f"extract_entities chunk {chunk_idx + 1}/{len(chunks)}",
                                 response_text=entity,
                                 extracted_data=entity,
@@ -240,7 +258,7 @@ async def _process_ontology_async(ontology_id: str) -> dict:
                                 provenance = ConceptProvenance(
                                     ontology_id=oid,
                                     concept_uri=prop.get("uri", ""),
-                                    document_id=doc.id,
+                                    document_id=doc_info["id"],
                                     prompt_text=f"extract_properties chunk {chunk_idx + 1}/{len(chunks)}",
                                     response_text=prop,
                                     extracted_data=prop,
@@ -251,19 +269,34 @@ async def _process_ontology_async(ontology_id: str) -> dict:
                     all_properties.extend(doc_properties)
 
                     # 3e. Mark document as processed
-                    doc.status = "processed"
+                    doc_obj = await session.get(Document, doc_info["id"])
+                    if doc_obj:
+                        doc_obj.status = "processed"
                     await session.commit()
 
                 except Exception as doc_exc:
                     logger.error(
                         "Error processing document %s: %s",
-                        doc.filename,
+                        doc_info["filename"],
                         doc_exc,
                         exc_info=True,
                     )
-                    doc.status = "error"
-                    doc.error_message = str(doc_exc)[:1000]
-                    await session.commit()
+                    # Rollback first — the transaction may be poisoned by a
+                    # SQL error, which would make a bare commit() fail with
+                    # InFailedSQLTransactionError.
+                    try:
+                        await session.rollback()
+                        doc_obj = await session.get(Document, doc_info["id"])
+                        if doc_obj:
+                            doc_obj.status = "error"
+                            doc_obj.error_message = str(doc_exc)[:1000]
+                            await session.commit()
+                    except Exception:
+                        logger.warning(
+                            "Failed to persist error status for document %s",
+                            doc_info["filename"],
+                            exc_info=True,
+                        )
 
             # -------------------------------------------------------
             # 4. Assemble full ontology via LLM
@@ -283,7 +316,7 @@ async def _process_ontology_async(ontology_id: str) -> dict:
             assembly_provenance = ConceptProvenance(
                 ontology_id=oid,
                 concept_uri="_assembly",
-                document_id=documents[0].id if documents else None,
+                document_id=doc_snapshots[0]["id"] if doc_snapshots else None,
                 prompt_text="assemble_ontology",
                 response_text=assembled,
                 extracted_data=assembled,
@@ -314,7 +347,7 @@ async def _process_ontology_async(ontology_id: str) -> dict:
             )
 
             validation_result = await validate_ontology(
-                session, oid, namespace_uri=ontology.namespace_uri,
+                session, oid, namespace_uri=ont_namespace_uri,
             )
 
             if not validation_result.conforms:
@@ -338,6 +371,7 @@ async def _process_ontology_async(ontology_id: str) -> dict:
             # -------------------------------------------------------
             # 8. Set status to "ready"
             # -------------------------------------------------------
+            ontology = await session.get(Ontology, oid)
             ontology.status = "ready"
             await session.commit()
 

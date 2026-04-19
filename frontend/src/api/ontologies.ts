@@ -35,7 +35,7 @@ export function useOntologies() {
   return useQuery<Ontology[]>({
     queryKey: keys.all,
     queryFn: async () => {
-      const { data } = await apiClient.get<Ontology[]>("/ontologies");
+      const { data } = await apiClient.get<Ontology[]>("/ontologies/");
       return data;
     },
   });
@@ -276,25 +276,34 @@ export function useDeleteRelationship(ontologyId: string) {
 // Export
 // ---------------------------------------------------------------------------
 
-export function useExportOntology() {
-  return useMutation({
-    mutationFn: async ({
-      ontologyId,
-      format,
-    }: {
-      ontologyId: string;
-      format: string;
-    }) => {
-      const { data, headers } = await apiClient.get(
-        `/ontologies/${ontologyId}/export`,
-        {
-          params: { format },
-          responseType: format === "json-ld" ? "json" : "blob",
-        },
-      );
-      return { data, contentType: headers["content-type"] as string };
-    },
-  });
+const EXPORT_EXTENSIONS: Record<string, string> = {
+  owl: "rdf",
+  ttl: "ttl",
+  jsonld: "jsonld",
+  json: "json",
+};
+
+export async function downloadExport(
+  ontologyId: string,
+  format: string,
+  ontologyName?: string,
+): Promise<void> {
+  const base = apiClient.defaults.baseURL ?? "/api";
+  const resp = await fetch(
+    `${base}/ontologies/${ontologyId}/export?format=${encodeURIComponent(format)}`,
+  );
+  if (!resp.ok) {
+    throw new Error(`Export failed (${resp.status})`);
+  }
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const ext = EXPORT_EXTENSIONS[format] ?? format;
+  const name = ontologyName ?? `ontology_${ontologyId}`;
+  a.download = `${name}.${ext}`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ---------------------------------------------------------------------------

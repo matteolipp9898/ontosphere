@@ -45,10 +45,11 @@ async def _get_ontology_or_404(
 
 
 @router.get(
-    "/",
+    "",
     response_model=list[OntologyVersionRead],
     summary="List ontology versions",
 )
+@router.get("/", response_model=list[OntologyVersionRead], include_in_schema=False)
 async def list_ontology_versions(
     ontology_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
@@ -68,11 +69,12 @@ async def list_ontology_versions(
 
 
 @router.post(
-    "/",
+    "",
     response_model=OntologyVersionRead,
     status_code=status.HTTP_201_CREATED,
     summary="Create a version snapshot",
 )
+@router.post("/", response_model=OntologyVersionRead, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 async def create_ontology_version(
     ontology_id: uuid.UUID,
     body: OntologyVersionCreate,

@@ -74,11 +74,12 @@ def _resolve_content_type(upload: UploadFile) -> str:
 
 
 @router.post(
-    "/",
+    "",
     response_model=list[DocumentRead],
     status_code=status.HTTP_201_CREATED,
     summary="Upload one or more documents",
 )
+@router.post("/", response_model=list[DocumentRead], status_code=status.HTTP_201_CREATED, include_in_schema=False)
 async def upload_documents(
     ontology_id: uuid.UUID,
     files: list[UploadFile],
@@ -146,10 +147,11 @@ async def upload_documents(
 
 
 @router.get(
-    "/",
+    "",
     response_model=list[DocumentRead],
     summary="List documents for an ontology",
 )
+@router.get("/", response_model=list[DocumentRead], include_in_schema=False)
 async def list_documents(
     ontology_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),

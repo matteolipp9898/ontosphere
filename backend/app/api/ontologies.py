@@ -14,6 +14,7 @@ from app.models.ontology import Ontology, OntologyStatus
 from app.models.user import User
 from app.schemas.ontology import OntologyCreate, OntologyRead, OntologyUpdate
 from app.schemas.common import StatusResponse
+from app.services.graph_service import GraphService
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +77,12 @@ def _ontology_to_read(ontology: Ontology) -> OntologyRead:
 
 
 @router.post(
-    "/",
+    "",
     response_model=OntologyRead,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new ontology",
 )
+@router.post("/", response_model=OntologyRead, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 async def create_ontology(
     body: OntologyCreate,
     session: AsyncSession = Depends(get_db),
@@ -94,16 +96,31 @@ async def create_ontology(
     )
     session.add(ontology)
     await session.flush()
+
+    # Create the backing AGE graph for this ontology.
+    try:
+        await GraphService.create_graph(session, ontology.id)
+        logger.info(
+            "Created AGE graph '%s' for ontology %s.",
+            GraphService.graph_name(ontology.id),
+            ontology.id,
+        )
+    except Exception as exc:
+        logger.error(
+            "Failed to create AGE graph for ontology %s: %s", ontology.id, exc
+        )
+
     await session.refresh(ontology)
     logger.info("Created ontology %s (%s).", ontology.id, ontology.name)
     return _ontology_to_read(ontology)
 
 
 @router.get(
-    "/",
+    "",
     response_model=list[OntologyRead],
     summary="List all ontologies",
 )
+@router.get("/", response_model=list[OntologyRead], include_in_schema=False)
 async def list_ontologies(
     session: AsyncSession = Depends(get_db),
 ) -> list[OntologyRead]:

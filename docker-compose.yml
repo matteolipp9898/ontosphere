@@ -1,8 +1,8 @@
-version: "3.9"
-
 services:
   postgres:
-    image: apache/age:PG16_latest
+    image: apache/age:release_PG16_1.5.0
+    # If PG16_latest is unavailable on your Docker Hub, try:
+    # image: apache/age:release_PG16_1.5.0
     ports:
       - "5432:5432"
     environment:
@@ -33,6 +33,8 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      ONTOSPHERE_AUTO_CREATE_TABLES: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,6 +42,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - upload_data:/app/uploads
     command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
   celery-worker:
@@ -47,12 +50,14 @@ services:
     env_file:
       - .env
     depends_on:
-      - postgres
-      - redis
-      - backend
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
       - ./backend:/app
-    command: celery -A app.tasks worker --loglevel=info
+      - upload_data:/app/uploads
+    command: celery -A app.tasks worker --loglevel=info -Q ontosphere
 
   frontend:
     build: ./frontend
@@ -63,7 +68,9 @@ services:
     volumes:
       - ./frontend/src:/app/src
     environment:
-      VITE_API_URL: http://backend:8000
+      VITE_API_BASE_URL: http://localhost:8000/api
+      VITE_WS_BASE_URL: ws://localhost:8000
 
 volumes:
   postgres_data:
+  upload_data:

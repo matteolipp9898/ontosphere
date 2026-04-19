@@ -8,11 +8,12 @@ can be set via ``ONTOSPHERE_``-prefixed environment variables (e.g.
 
 from __future__ import annotations
 
+import json
 import re
 from functools import lru_cache
 from typing import ClassVar
 
-from pydantic import AliasChoices, Field, computed_field, model_validator
+from pydantic import AliasChoices, Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -54,6 +55,12 @@ class Settings(BaseSettings):
             "ONTOSPHERE_LLM_API_VERSION", "LLM_API_VERSION"
         ),
     )
+    LLM_MAX_TOKENS: int = Field(
+        default=16384,
+        validation_alias=AliasChoices(
+            "ONTOSPHERE_LLM_MAX_TOKENS", "LLM_MAX_TOKENS"
+        ),
+    )
 
     # -- Database --
     DATABASE_URL: str = (
@@ -68,6 +75,25 @@ class Settings(BaseSettings):
 
     # -- CORS --
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors(cls, v: object) -> list[str]:
+        """Accept both JSON arrays and comma-separated strings."""
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("["):
+                return json.loads(v)
+            return [item.strip() for item in v.split(",") if item.strip()]
+        return [str(v)]
+
+    # -- Auto table creation --
+    AUTO_CREATE_TABLES: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("ONTOSPHERE_AUTO_CREATE_TABLES", "AUTO_CREATE_TABLES"),
+    )
 
     # -- Uploads --
     UPLOAD_DIR: str = "./uploads"

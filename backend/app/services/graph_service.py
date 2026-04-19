@@ -6,7 +6,9 @@ executed through the ``execute_age_query`` database helper.
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
@@ -16,6 +18,59 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import create_age_graph, execute_age_query
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# AGE agtype parsing helpers
+# ---------------------------------------------------------------------------
+
+def _parse_agtype(value: Any) -> Any:
+    """Parse an AGE agtype value into a Python object.
+
+    AGE returns vertices as ``{...}::vertex``, edges as ``{...}::edge``,
+    and scalars as bare JSON values.
+    """
+    if value is None:
+        return None
+    s = str(value)
+    # Strip the ::vertex / ::edge type suffix
+    s = re.sub(r"::(vertex|edge)$", "", s)
+    try:
+        return json.loads(s)
+    except (json.JSONDecodeError, ValueError):
+        return s
+
+
+def _vertex_props(value: Any) -> dict[str, Any]:
+    """Extract the properties dict from an AGE vertex agtype."""
+    parsed = _parse_agtype(value)
+    if isinstance(parsed, dict):
+        props = dict(parsed.get("properties", {}))
+        props["_label"] = parsed.get("label", "")
+        return props
+    return {}
+
+
+def _edge_info(value: Any) -> dict[str, Any]:
+    """Extract label and properties from an AGE edge agtype."""
+    parsed = _parse_agtype(value)
+    if isinstance(parsed, dict):
+        props = dict(parsed.get("properties", {}))
+        props["_type"] = parsed.get("label", "")
+        return props
+    return {}
+
+
+def _sanitize_rel_type(rel_type: str) -> str:
+    """Sanitize a relationship type for use as a Cypher edge label.
+
+    Uppercases, replaces non-alphanumeric characters with underscores,
+    and ensures the result starts with a letter.
+    """
+    sanitized = re.sub(r"[^A-Za-z0-9_]", "_", rel_type).upper()
+    if not sanitized or not sanitized[0].isalpha():
+        sanitized = "REL_" + sanitized
+    return sanitized
 
 
 # ---------------------------------------------------------------------------
@@ -105,43 +160,45 @@ class GraphService:
         name = cls.graph_name(ontology_id)
         graph = GraphData()
 
-        # Fetch all nodes
+        # Fetch all nodes — return the whole vertex and parse in Python.
         node_rows = await execute_age_query(
             session,
             name,
-            "MATCH (n) RETURN n.uri AS uri, n.label AS label, "
-            "n.description AS description, n.node_type AS node_type, "
-            "labels(n) AS labels",
+            "MATCH (n) RETURN n",
+            columns="n agtype",
         )
         for row in node_rows:
-            node_type = row.get("node_type", "class")
-            # Derive from AGE label if node_type property is absent
-            labels = row.get("labels", [])
-            if not node_type and labels:
-                node_type = str(labels[0]).lower()
+            props = _vertex_props(row[0])
+            node_type = props.get("node_type", "")
+            # Derive from the AGE vertex label if node_type property is absent
+            if not node_type:
+                node_type = props.get("_label", "class").lower()
             graph.nodes.append(
                 GraphNode(
-                    uri=row.get("uri", ""),
-                    label=row.get("label", ""),
-                    description=row.get("description", ""),
+                    uri=props.get("uri", ""),
+                    label=props.get("label", ""),
+                    description=props.get("description", ""),
                     node_type=node_type or "class",
                 )
             )
 
-        # Fetch all edges
+        # Fetch all edges — return start node, edge, and end node.
         edge_rows = await execute_age_query(
             session,
             name,
-            "MATCH (a)-[r]->(b) RETURN a.uri AS source_uri, b.uri AS target_uri, "
-            "type(r) AS edge_type, r.label AS label",
+            "MATCH (a)-[r]->(b) RETURN a, r, b",
+            columns="a agtype, r agtype, b agtype",
         )
         for row in edge_rows:
+            a_props = _vertex_props(row[0])
+            r_info = _edge_info(row[1])
+            b_props = _vertex_props(row[2])
             graph.edges.append(
                 GraphEdge(
-                    source_uri=row.get("source_uri", ""),
-                    target_uri=row.get("target_uri", ""),
-                    edge_type=row.get("edge_type", ""),
-                    label=row.get("label", ""),
+                    source_uri=a_props.get("uri", ""),
+                    target_uri=b_props.get("uri", ""),
+                    edge_type=r_info.get("_type", ""),
+                    label=r_info.get("label", ""),
                 )
             )
 
@@ -164,9 +221,15 @@ class GraphService:
         rows = await execute_age_query(
             session,
             name,
-            "MATCH (n:Class) RETURN n.uri AS uri",
+            "MATCH (n:Class) RETURN n",
+            columns="n agtype",
         )
-        return [row["uri"] for row in rows if row.get("uri")]
+        uris = []
+        for row in rows:
+            uri = _vertex_props(row[0]).get("uri", "")
+            if uri:
+                uris.append(uri)
+        return uris
 
     # ------------------------------------------------------------------
     # Write operations -- Classes
@@ -198,7 +261,7 @@ class GraphService:
                 session,
                 name,
                 "MATCH (child:Class {uri: $child_uri}), (parent:Class {uri: $parent_uri}) "
-                "CREATE (child)-[:SUBCLASS_OF {label: 'subClassOf'}]->(parent)",
+                "CREATE (child)-[r:SUBCLASS_OF {label: 'subClassOf'}]->(parent)",
                 params={"child_uri": uri, "parent_uri": parent_uri},
             )
 
@@ -283,7 +346,7 @@ class GraphService:
             session,
             name,
             "MATCH (p:Property {uri: $prop_uri}), (c:Class {uri: $domain_uri}) "
-            "CREATE (p)-[:DOMAIN {label: 'domain'}]->(c)",
+            "CREATE (p)-[r:DOMAIN {label: 'domain'}]->(c)",
             params={"prop_uri": uri, "domain_uri": domain_uri},
         )
 
@@ -293,7 +356,7 @@ class GraphService:
                 session,
                 name,
                 "MATCH (p:Property {uri: $prop_uri}), (c:Class {uri: $range_uri}) "
-                "CREATE (p)-[:RANGE {label: 'range'}]->(c)",
+                "CREATE (p)-[r:RANGE {label: 'range'}]->(c)",
                 params={"prop_uri": uri, "range_uri": range_uri},
             )
         else:
@@ -327,6 +390,7 @@ class GraphService:
         SUBCLASS_OF, HAS_PROPERTY, DOMAIN, RANGE, EQUIVALENT_TO, RELATES_TO.
         """
         name = cls.graph_name(ontology_id)
+        safe_type = _sanitize_rel_type(rel_type)
 
         valid_types = {
             "SUBCLASS_OF",
@@ -336,16 +400,15 @@ class GraphService:
             "EQUIVALENT_TO",
             "RELATES_TO",
         }
-        if rel_type not in valid_types:
+        if safe_type not in valid_types:
             raise ValueError(
-                f"Invalid relationship type '{rel_type}'. Must be one of {valid_types}"
+                f"Invalid relationship type '{rel_type}' (sanitized: '{safe_type}'). "
+                f"Must be one of {valid_types}"
             )
 
-        # AGE doesn't support parameterised relationship types, so we
-        # validate above and interpolate safely.
         cypher = (
             f"MATCH (a {{uri: $source_uri}}), (b {{uri: $target_uri}}) "
-            f"CREATE (a)-[:{rel_type} {{label: $label}}]->(b)"
+            f"CREATE (a)-[r:{safe_type} {{label: $label}}]->(b)"
         )
         await execute_age_query(
             session,
@@ -354,14 +417,14 @@ class GraphService:
             params={
                 "source_uri": source_uri,
                 "target_uri": target_uri,
-                "label": rel_type.lower(),
+                "label": safe_type.lower(),
             },
         )
         logger.debug(
             "Added relationship %s -> %s [%s] in graph '%s'",
             source_uri,
             target_uri,
-            rel_type,
+            safe_type,
             name,
         )
 
@@ -376,6 +439,7 @@ class GraphService:
     ) -> None:
         """Delete a specific edge between two nodes."""
         name = cls.graph_name(ontology_id)
+        safe_type = _sanitize_rel_type(rel_type)
 
         valid_types = {
             "SUBCLASS_OF",
@@ -385,13 +449,14 @@ class GraphService:
             "EQUIVALENT_TO",
             "RELATES_TO",
         }
-        if rel_type not in valid_types:
+        if safe_type not in valid_types:
             raise ValueError(
-                f"Invalid relationship type '{rel_type}'. Must be one of {valid_types}"
+                f"Invalid relationship type '{rel_type}' (sanitized: '{safe_type}'). "
+                f"Must be one of {valid_types}"
             )
 
         cypher = (
-            f"MATCH (a {{uri: $source_uri}})-[r:{rel_type}]->(b {{uri: $target_uri}}) "
+            f"MATCH (a {{uri: $source_uri}})-[r:{safe_type}]->(b {{uri: $target_uri}}) "
             "DELETE r"
         )
         await execute_age_query(
@@ -404,7 +469,7 @@ class GraphService:
             "Deleted relationship %s -> %s [%s] from graph '%s'",
             source_uri,
             target_uri,
-            rel_type,
+            safe_type,
             name,
         )
 
@@ -424,25 +489,36 @@ class GraphService:
         *assembled* is expected to have keys ``classes``, ``properties``,
         and ``relationships`` as produced by ``LLMClient.assemble_ontology``.
         """
+        name = cls.graph_name(ontology_id)
         classes: list[dict] = assembled.get("classes", [])
         properties: list[dict] = assembled.get("properties", [])
         relationships: list[dict] = assembled.get("relationships", [])
 
         # 1. Create all class nodes
         class_uris: set[str] = set()
+        errors: int = 0
         for cls_data in classes:
             uri = cls_data.get("uri", "")
             if not uri:
                 continue
-            class_uris.add(uri)
-            await cls.add_class(
-                session,
-                ontology_id,
-                uri=uri,
-                label=cls_data.get("label", uri),
-                description=cls_data.get("description", ""),
-                parent_uri=cls_data.get("parent"),
-            )
+            try:
+                await cls.add_class(
+                    session,
+                    ontology_id,
+                    uri=uri,
+                    label=cls_data.get("label", uri),
+                    description=cls_data.get("description", ""),
+                    parent_uri=cls_data.get("parent"),
+                )
+                class_uris.add(uri)
+            except Exception as exc:
+                errors += 1
+                logger.error(
+                    "Failed to add class %r to graph %r: %s",
+                    uri,
+                    name,
+                    exc,
+                )
 
         # 2. Create property nodes with DOMAIN/RANGE edges
         for prop_data in properties:
@@ -453,15 +529,25 @@ class GraphService:
                 continue
             # Only create if domain exists in the graph
             if domain_uri in class_uris:
-                await cls.add_property(
-                    session,
-                    ontology_id,
-                    uri=uri,
-                    label=prop_data.get("label", uri),
-                    domain_uri=domain_uri,
-                    range_uri=range_uri,
-                    description=prop_data.get("description", ""),
-                )
+                try:
+                    await cls.add_property(
+                        session,
+                        ontology_id,
+                        uri=uri,
+                        label=prop_data.get("label", uri),
+                        domain_uri=domain_uri,
+                        range_uri=range_uri,
+                        description=prop_data.get("description", ""),
+                    )
+                except Exception as exc:
+                    errors += 1
+                    logger.error(
+                        "Failed to add property %r (domain=%r) to graph %r: %s",
+                        uri,
+                        domain_uri,
+                        name,
+                        exc,
+                    )
 
         # 3. Create explicit relationships
         for rel_data in relationships:
@@ -478,12 +564,21 @@ class GraphService:
                     target_uri=target_uri,
                     rel_type=rel_type,
                 )
-            except ValueError as exc:
-                logger.warning("Skipping invalid relationship: %s", exc)
+            except Exception as exc:
+                errors += 1
+                logger.warning(
+                    "Skipping relationship %s -> %s [%s] in graph %r: %s",
+                    source_uri,
+                    target_uri,
+                    rel_type,
+                    name,
+                    exc,
+                )
 
         logger.info(
-            "Built graph from LLM output: %d classes, %d properties, %d relationships",
+            "Built graph from LLM output: %d classes, %d properties, %d relationships (%d errors)",
             len(classes),
             len(properties),
             len(relationships),
+            errors,
         )

@@ -1,9 +1,9 @@
 [project]
 name = "ontosphere"
-version = "0.1.0"
+version = "0.1.1"
 description = "OntoSphere - Generate ontologies from documents using LLMs"
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
 dependencies = [
     "fastapi[standard]>=0.115.0",
@@ -23,7 +23,9 @@ dependencies = [
     "python-docx>=1.1.0",
     "PyPDF2>=3.0.0",
     "python-magic>=0.4.27",
-    "apache-age-python>=0.1.0",
+    "apache-age-python>=0.0.7",
+    "aiofiles>=24.0",
+    "json-repair>=0.30.0",
 ]
 
 [project.optional-dependencies]
@@ -37,8 +39,6 @@ dev = [
     "mypy>=1.10.0",
 ]
 
-[project.scripts]
-dev = "uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
 
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]

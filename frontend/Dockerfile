@@ -3,7 +3,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Copy dependency manifests and install
-COPY package.json package-lock.json ./
+COPY package.json ./
 RUN npm install
 
 # Copy application source

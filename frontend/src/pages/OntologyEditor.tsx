@@ -4,7 +4,7 @@ import {
   useOntology,
   useGraph,
   useValidateOntology,
-  useExportOntology,
+  downloadExport,
   useCreateVersion,
   useOntologyStatus,
 } from "@/api/ontologies";
@@ -49,7 +49,6 @@ export default function OntologyEditor() {
   const { data: taskStatus } = useOntologyStatus(ontologyId!, isProcessing);
 
   const validateOntology = useValidateOntology(ontologyId!);
-  const exportOntology = useExportOntology();
   const createVersion = useCreateVersion(ontologyId!);
 
   // WebSocket for live updates during processing
@@ -118,13 +117,13 @@ export default function OntologyEditor() {
   const handleExport = useCallback(
     async (format: string) => {
       try {
-        await exportOntology.mutateAsync({ ontologyId: ontologyId!, format });
+        await downloadExport(ontologyId!, format, ontology?.name);
         toast.success(`Exported as ${format.toUpperCase()}`);
       } catch {
         toast.error("Export failed");
       }
     },
-    [exportOntology, ontologyId],
+    [ontologyId, ontology?.name],
   );
 
   const handleCreateVersion = useCallback(async () => {

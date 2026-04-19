@@ -11,6 +11,7 @@ Provides:
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -88,6 +89,34 @@ async def init_db() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Startup migration: move tables misplaced in ag_catalog back to public
+# ---------------------------------------------------------------------------
+
+_MANAGED_TABLES = ("users", "ontologies", "documents", "ontology_versions", "concept_provenance")
+
+
+async def fix_misplaced_tables() -> None:
+    """Move application tables from ag_catalog to public if they were created there by mistake."""
+    async with async_engine.begin() as conn:
+        for table in _MANAGED_TABLES:
+            row = await conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema = 'ag_catalog' AND table_name = :tbl"
+                ),
+                {"tbl": table},
+            )
+            if row.scalar_one_or_none() is not None:
+                logger.warning(
+                    "Table %r found in ag_catalog — moving to public.", table
+                )
+                await conn.execute(
+                    text(f'ALTER TABLE ag_catalog."{table}" SET SCHEMA public;')
+                )
+    logger.info("Misplaced-table migration check complete.")
+
+
+# ---------------------------------------------------------------------------
 # AGE helpers
 # ---------------------------------------------------------------------------
 
@@ -97,14 +126,51 @@ async def create_age_graph(session: AsyncSession, graph_name: str) -> None:
 
     Args:
         session: Active async database session.
-        graph_name: Name for the new graph.
+        graph_name: Name for the new graph (must contain only alphanumerics and underscores).
     """
+    # Sanitise the graph name to prevent injection
+    safe_name = graph_name.replace("-", "_")
+    if not safe_name.replace("_", "").isalnum():
+        raise ValueError(f"Invalid graph name: {graph_name!r}")
+
+    await session.execute(text("LOAD 'age';"))
     await session.execute(text(_AGE_SEARCH_PATH))
     try:
-        await session.execute(text(f"SELECT create_graph('{graph_name}');"))
-        logger.info("Created AGE graph %r.", graph_name)
+        # Use a savepoint so that a "graph already exists" error does not
+        # poison the outer transaction.
+        async with session.begin_nested():
+            await session.execute(text(f"SELECT create_graph('{safe_name}');"))
+        logger.info("Created AGE graph %r.", safe_name)
     except Exception:
-        logger.debug("AGE graph %r already exists.", graph_name)
+        logger.debug("AGE graph %r already exists.", safe_name)
+
+
+def _cypher_literal(value: Any) -> str:
+    """Convert a Python value to a Cypher literal string."""
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    # Everything else → single-quoted Cypher string with escaping.
+    escaped = str(value).replace("\\", "\\\\").replace("'", "\\'")
+    return f"'{escaped}'"
+
+
+def _interpolate_cypher(cypher: str, params: dict[str, Any] | None) -> str:
+    """Replace ``$param`` placeholders in a Cypher query with literal values.
+
+    AGE does not support native bind parameters inside the ``$$ … $$``
+    dollar-quoted Cypher string, so values must be embedded directly.
+    Keys are replaced longest-first to avoid ``$uri`` matching inside
+    ``$uri_prefix``.
+    """
+    if not params:
+        return cypher
+    for key in sorted(params, key=len, reverse=True):
+        cypher = cypher.replace(f"${key}", _cypher_literal(params[key]))
+    return cypher
 
 
 async def execute_age_query(
@@ -112,26 +178,45 @@ async def execute_age_query(
     graph_name: str,
     cypher: str,
     params: dict[str, Any] | None = None,
+    columns: str = "result agtype",
 ) -> list[Any]:
     """Execute a Cypher query against an AGE graph.
 
     Args:
         session: Active async database session.
         graph_name: Target graph name.
-        cypher: Cypher query string.  Use ``$param`` placeholders.
+        cypher: Cypher query string.  Use ``$param`` placeholders for values
+            that will be interpolated via :func:`_interpolate_cypher`.
         params: Optional dict of query parameters.
+        columns: Column definition for the AS clause
+            (e.g. ``"n agtype"`` or ``"a agtype, r agtype, b agtype"``).
 
     Returns:
         A list of result rows.
     """
-    await session.execute(text(_AGE_SEARCH_PATH))
+    resolved_cypher = _interpolate_cypher(cypher, params)
+    try:
+        await session.execute(text("LOAD 'age';"))
+        await session.execute(text(_AGE_SEARCH_PATH))
 
-    # AGE uses the ``cypher()`` SQL function.  Parameters are interpolated
-    # by the caller because AGE does not support native bind parameters.
-    sql = f"SELECT * FROM cypher('{graph_name}', $$ {cypher} $$) AS (result agtype);"
-    result = await session.execute(text(sql), params or {})
-    rows = result.fetchall()
-    logger.debug(
-        "AGE query on graph %r returned %d row(s).", graph_name, len(rows)
-    )
-    return rows
+        sql = f"SELECT * FROM cypher('{graph_name}', $$ {resolved_cypher} $$) AS ({columns});"
+        # Escape :word patterns (e.g. Cypher [:RANGE]) that SQLAlchemy's
+        # text() would misinterpret as SQL bind parameters.  The lookbehind
+        # skips word-chars and colons so n:Class and :: casts are untouched.
+        sql = re.sub(r"(?<![\w:]):(\w+)", r"\:\1", sql)
+        result = await session.execute(text(sql))
+        rows = result.fetchall()
+        logger.debug(
+            "AGE query on graph %r returned %d row(s).", graph_name, len(rows)
+        )
+        return rows
+    except Exception:
+        logger.error(
+            "AGE query failed on graph %r — cypher: %.300s | params: %r",
+            graph_name,
+            resolved_cypher,
+            params,
+            exc_info=True,
+        )
+        await session.rollback()
+        raise

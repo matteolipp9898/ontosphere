@@ -103,6 +103,8 @@ class LLMClient:
         self._api_key = settings.LLM_API_KEY
         self._model = settings.LLM_MODEL
         self._provider = getattr(settings, "LLM_PROVIDER", "openai").lower()
+        self._api_version = getattr(settings, "LLM_API_VERSION", "2024-10-21")
+        self._max_tokens = getattr(settings, "LLM_MAX_TOKENS", 16384)
 
         headers: dict[str, str] = {
             "Content-Type": "application/json",
@@ -132,6 +134,7 @@ class LLMClient:
         system_prompt: str,
         user_prompt: str,
         json_schema: dict | None = None,
+        max_tokens: int | None = None,
     ) -> dict | str:
         """Send a chat completion request with retry logic.
 
@@ -140,6 +143,7 @@ class LLMClient:
             user_prompt: User message / input text.
             json_schema: If provided, request structured JSON output and
                 parse the response into a dict.
+            max_tokens: Override the default max_tokens for this call.
 
         Returns:
             Parsed dict when *json_schema* is provided or the response
@@ -154,7 +158,7 @@ class LLMClient:
             "model": self._model,
             "messages": messages,
             "temperature": 0.1,
-            "max_tokens": 4096,
+            "max_tokens": max_tokens if max_tokens is not None else self._max_tokens,
         }
 
         if json_schema is not None:
@@ -166,11 +170,12 @@ class LLMClient:
         for attempt in range(1, self.MAX_RETRIES + 1):
             try:
                 logger.debug(
-                    "LLM request attempt %d/%d to %s (model=%s)",
+                    "LLM request attempt %d/%d to %s (model=%s, max_tokens=%d)",
                     attempt,
                     self.MAX_RETRIES,
                     endpoint,
                     self._model,
+                    body["max_tokens"],
                 )
                 resp = await self._client.post(endpoint, json=body)
                 resp.raise_for_status()
@@ -178,7 +183,20 @@ class LLMClient:
 
                 content = self._extract_content(data)
 
-                logger.debug("LLM response (truncated): %.500s", content)
+                # Detect truncation via finish_reason
+                finish_reason = self._get_finish_reason(data)
+                logger.info(
+                    "LLM response: %d chars, finish_reason=%s",
+                    len(content),
+                    finish_reason,
+                )
+                if finish_reason == "length":
+                    logger.warning(
+                        "LLM response was TRUNCATED (hit max_tokens=%d). "
+                        "Response length: %d chars. Will attempt JSON recovery.",
+                        body["max_tokens"],
+                        len(content),
+                    )
 
                 if json_schema is not None or self._looks_like_json(content):
                     return self._parse_json(content)
@@ -348,12 +366,22 @@ class LLMClient:
     def _resolve_endpoint(self) -> str:
         """Return the chat completions endpoint path."""
         if self._provider == "azure":
-            # Azure uses a deployment-based path; assume the base URL
-            # already includes the deployment, e.g.
-            # https://<resource>.openai.azure.com/openai/deployments/<model>
-            return "/chat/completions?api-version=2024-02-01"
+            # If the base URL already contains the deployment path, just
+            # append the completions route.  Otherwise build the full path
+            # from the resource root + model name.
+            if "/openai/deployments/" in self._api_base:
+                endpoint = f"/chat/completions?api-version={self._api_version}"
+            else:
+                endpoint = (
+                    f"/openai/deployments/{self._model}"
+                    f"/chat/completions?api-version={self._api_version}"
+                )
+            logger.info("Azure endpoint resolved: %s%s", self._api_base, endpoint)
+            return endpoint
         # Standard OpenAI-compatible endpoint
-        return "/v1/chat/completions"
+        endpoint = "/v1/chat/completions"
+        logger.info("LLM endpoint resolved: %s%s", self._api_base, endpoint)
+        return endpoint
 
     @staticmethod
     def _extract_content(data: dict) -> str:
@@ -366,6 +394,14 @@ class LLMClient:
             ) from exc
 
     @staticmethod
+    def _get_finish_reason(data: dict) -> str:
+        """Return the finish_reason from the API response, or 'unknown'."""
+        try:
+            return data["choices"][0].get("finish_reason", "unknown") or "unknown"
+        except (KeyError, IndexError, TypeError):
+            return "unknown"
+
+    @staticmethod
     def _looks_like_json(text: str) -> bool:
         stripped = text.strip()
         return (stripped.startswith("{") and stripped.endswith("}")) or (
@@ -374,22 +410,97 @@ class LLMClient:
 
     @staticmethod
     def _parse_json(text: str) -> dict:
-        """Parse a JSON string, stripping markdown code fences if present."""
+        """Parse a JSON string, handling markdown fences and truncation.
+
+        Recovery strategy when ``json.loads`` fails:
+        1. Try the ``json_repair`` library (handles most malformed JSON).
+        2. Fall back to manual truncation recovery (trim to last ``}``
+           and close remaining open brackets/braces).
+        """
         cleaned = text.strip()
         # Strip ```json ... ``` wrappers the LLM may add
         if cleaned.startswith("```"):
             lines = cleaned.split("\n")
-            # Remove first and last lines if they are fences
             if lines[0].startswith("```"):
                 lines = lines[1:]
             if lines and lines[-1].strip() == "```":
                 lines = lines[:-1]
             cleaned = "\n".join(lines)
 
+        # 1. Standard parse
         try:
             return json.loads(cleaned)
-        except json.JSONDecodeError as exc:
-            logger.error("Failed to parse LLM JSON response: %s", exc)
-            raise ValueError(
-                f"LLM returned invalid JSON: {cleaned[:200]}..."
-            ) from exc
+        except json.JSONDecodeError:
+            pass
+
+        logger.warning(
+            "Standard JSON parse failed (%d chars). Attempting recovery ...",
+            len(cleaned),
+        )
+
+        # 2. json-repair library
+        try:
+            import json_repair
+            result = json_repair.loads(cleaned)
+            if isinstance(result, dict):
+                logger.warning(
+                    "Recovered malformed/truncated JSON via json-repair (%d chars).",
+                    len(cleaned),
+                )
+                return result
+            if isinstance(result, list):
+                logger.warning(
+                    "json-repair returned a list; wrapping in dict (%d chars).",
+                    len(cleaned),
+                )
+                return {"items": result}
+        except Exception as exc:
+            logger.debug("json-repair failed: %s", exc)
+
+        # 3. Manual truncation recovery
+        recovered = LLMClient._recover_truncated_json(cleaned)
+        if recovered is not None:
+            logger.warning(
+                "Recovered truncated JSON by closing structure (%d chars).",
+                len(cleaned),
+            )
+            return recovered
+
+        logger.error(
+            "All JSON recovery attempts failed (%d chars): %.200s...",
+            len(cleaned),
+            cleaned,
+        )
+        raise ValueError(f"LLM returned invalid JSON: {cleaned[:200]}...")
+
+    @staticmethod
+    def _recover_truncated_json(text: str) -> dict | None:
+        """Attempt to recover a truncated JSON object.
+
+        Trims to the last ``}`` and closes any remaining open
+        brackets / braces.
+        """
+        if not text.lstrip().startswith("{"):
+            return None
+
+        last_brace = text.rfind("}")
+        if last_brace == -1:
+            return None
+
+        candidate = text[: last_brace + 1]
+        open_braces = candidate.count("{") - candidate.count("}")
+        open_brackets = candidate.count("[") - candidate.count("]")
+
+        if open_braces < 0 or open_brackets < 0:
+            return None
+
+        candidate += "]" * open_brackets + "}" * open_braces
+
+        try:
+            result = json.loads(candidate)
+            if isinstance(result, dict):
+                return result
+        except json.JSONDecodeError:
+            pass
+
+        return None

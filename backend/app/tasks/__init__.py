@@ -24,6 +24,7 @@ celery_app.config_from_object(
         "task_acks_late": True,
         "worker_prefetch_multiplier": 1,
         "task_default_queue": "ontosphere",
+        "include": ["app.tasks.processing"],
         "task_routes": {
             "app.tasks.processing.process_ontology_task": {"queue": "ontosphere"},
         },
@@ -32,3 +33,6 @@ celery_app.config_from_object(
 
 # Auto-discover task modules
 celery_app.autodiscover_tasks(["app.tasks"])
+
+# Explicit task imports so Celery can find them at worker startup
+from app.tasks import processing  # noqa: E402, F401

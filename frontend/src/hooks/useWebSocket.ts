@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 interface WebSocketMessage {
   type: string;
   payload: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 interface UseWebSocketReturn {
@@ -19,8 +20,11 @@ export function useWebSocket(ontologyId: string | undefined): UseWebSocketReturn
   const connect = useCallback(() => {
     if (!ontologyId) return;
 
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/api/ontologies/${ontologyId}/events`;
+    const wsBase =
+      import.meta.env.VITE_WS_BASE_URL ??
+      `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
+
+    const wsUrl = `${wsBase}/api/ontologies/${ontologyId}/events`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;

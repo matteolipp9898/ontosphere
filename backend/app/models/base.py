@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, text
+from sqlalchemy import MetaData, func, text
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -23,6 +23,7 @@ class Base(DeclarativeBase):
     """Shared declarative base for all OntoSphere ORM models."""
 
     __abstract__ = True
+    metadata = MetaData(schema="public")
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
