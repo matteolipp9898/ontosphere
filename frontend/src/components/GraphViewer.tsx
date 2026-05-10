@@ -7,6 +7,12 @@ import {
   type IConnectionTool,
   type EdgeCreateEvent,
 } from "@/components/graph/ConnectionTool";
+import {
+  createGraphContextMenu,
+  type IGraphContextMenu,
+  type GraphMenuActions,
+} from "@/components/graph/GraphContextMenu";
+import "cytoscape-context-menus/cytoscape-context-menus.css";
 import { Network } from "lucide-react";
 
 // Register the dagre layout extension once
@@ -24,6 +30,7 @@ interface GraphViewerProps {
   data: GraphData;
   onNodeSelect: (nodeId: string | null) => void;
   onEdgeCreate?: (event: EdgeCreateEvent) => void;
+  menuActions?: GraphMenuActions;
   searchQuery: string;
   editMode: boolean;
   selectedNodeId: string | null;
@@ -55,6 +62,7 @@ export default function GraphViewer({
   data,
   onNodeSelect,
   onEdgeCreate,
+  menuActions,
   searchQuery,
   editMode,
   selectedNodeId,
@@ -62,6 +70,7 @@ export default function GraphViewer({
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
   const connectionToolRef = useRef<IConnectionTool | null>(null);
+  const contextMenuRef = useRef<IGraphContextMenu | null>(null);
 
   // Convert graph data to cytoscape elements
   const elements = useMemo(() => {
@@ -207,10 +216,17 @@ export default function GraphViewer({
       });
     }
 
+    // Initialize context menu (starts hidden — editMode effect controls it)
+    if (menuActions) {
+      contextMenuRef.current = createGraphContextMenu(cy, cytoscape, menuActions);
+    }
+
     // Fit to view
     cy.fit(undefined, 30);
 
     return () => {
+      contextMenuRef.current?.destroy();
+      contextMenuRef.current = null;
       connectionToolRef.current?.destroy();
       connectionToolRef.current = null;
       cy.destroy();
@@ -220,15 +236,17 @@ export default function GraphViewer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elements]);
 
-  // Toggle connection tool when editMode changes
+  // Toggle edit-mode tools (connection tool + context menu)
   useEffect(() => {
-    const tool = connectionToolRef.current;
-    if (!tool) return;
+    const connTool = connectionToolRef.current;
+    const ctxMenu = contextMenuRef.current;
 
     if (editMode) {
-      tool.enable();
+      connTool?.enable();
+      ctxMenu?.enable();
     } else {
-      tool.disable();
+      connTool?.disable();
+      ctxMenu?.disable();
     }
   }, [editMode]);
 
