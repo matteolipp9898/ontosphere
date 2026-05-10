@@ -7,10 +7,12 @@ import {
   downloadExport,
   useCreateVersion,
   useOntologyStatus,
+  useAddRelationship,
 } from "@/api/ontologies";
 import { useOntologyStore } from "@/store/ontologyStore";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import type { GraphNode } from "@/types/ontology";
+import type { EdgeCreateEvent } from "@/components/graph/ConnectionTool";
 import Toolbar from "@/components/Toolbar";
 import GraphViewer from "@/components/GraphViewer";
 import NodePanel from "@/components/NodePanel";
@@ -50,9 +52,10 @@ export default function OntologyEditor() {
 
   const validateOntology = useValidateOntology(ontologyId!);
   const createVersion = useCreateVersion(ontologyId!);
+  const addRelationship = useAddRelationship(ontologyId!);
 
   // WebSocket for live updates during processing
-  const { lastMessage, isConnected } = useWebSocket(ontologyId!);
+  const { lastMessage } = useWebSocket(ontologyId!);
 
   // Handle WebSocket messages for status updates
   useEffect(() => {
@@ -91,6 +94,22 @@ export default function OntologyEditor() {
   const handleToggleEditMode = useCallback(() => {
     toggleEditMode();
   }, [toggleEditMode]);
+
+  const handleEdgeCreate = useCallback(
+    async (event: EdgeCreateEvent) => {
+      try {
+        await addRelationship.mutateAsync({
+          source_uri: event.sourceUri,
+          target_uri: event.targetUri,
+          relationship_type: "RELATED_TO",
+        });
+        toast.success("Relationship created");
+      } catch {
+        toast.error("Failed to create relationship");
+      }
+    },
+    [addRelationship],
+  );
 
   const handleSearchChange = useCallback(
     (q: string) => {
@@ -183,6 +202,7 @@ export default function OntologyEditor() {
           <GraphViewer
             data={graphData ?? { nodes: [], edges: [] }}
             onNodeSelect={handleNodeSelect}
+            onEdgeCreate={handleEdgeCreate}
             searchQuery={searchQuery}
             editMode={editMode}
             selectedNodeId={selectedNodeId}

@@ -1,7 +1,12 @@
-import { useRef, useEffect, useCallback, useMemo } from "react";
+import { useRef, useEffect, useMemo } from "react";
 import cytoscape, { Core, EventObject } from "cytoscape";
 import dagre from "cytoscape-dagre";
 import { GraphData } from "@/types/ontology";
+import {
+  createConnectionTool,
+  type IConnectionTool,
+  type EdgeCreateEvent,
+} from "@/components/graph/ConnectionTool";
 import { Network } from "lucide-react";
 
 // Register the dagre layout extension once
@@ -18,6 +23,7 @@ if (!dagreRegistered) {
 interface GraphViewerProps {
   data: GraphData;
   onNodeSelect: (nodeId: string | null) => void;
+  onEdgeCreate?: (event: EdgeCreateEvent) => void;
   searchQuery: string;
   editMode: boolean;
   selectedNodeId: string | null;
@@ -45,17 +51,17 @@ const EDGE_STYLES: Record<string, { lineColor: string; lineStyle: string }> = {
   DISJOINT_WITH: { lineColor: "#ef4444", lineStyle: "dashed" },
 };
 
-const DEFAULT_EDGE_STYLE = { lineColor: "#9ca3af", lineStyle: "solid" };
-
 export default function GraphViewer({
   data,
   onNodeSelect,
+  onEdgeCreate,
   searchQuery,
   editMode,
   selectedNodeId,
 }: GraphViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<Core | null>(null);
+  const connectionToolRef = useRef<IConnectionTool | null>(null);
 
   // Convert graph data to cytoscape elements
   const elements = useMemo(() => {
@@ -194,16 +200,37 @@ export default function GraphViewer({
       }
     });
 
+    // Initialize connection tool (starts disabled — editMode effect controls it)
+    if (onEdgeCreate) {
+      connectionToolRef.current = createConnectionTool(cy, cytoscape, {
+        onEdgeCreate,
+      });
+    }
+
     // Fit to view
     cy.fit(undefined, 30);
 
     return () => {
+      connectionToolRef.current?.destroy();
+      connectionToolRef.current = null;
       cy.destroy();
       cyRef.current = null;
     };
     // Only re-create when elements change
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elements]);
+
+  // Toggle connection tool when editMode changes
+  useEffect(() => {
+    const tool = connectionToolRef.current;
+    if (!tool) return;
+
+    if (editMode) {
+      tool.enable();
+    } else {
+      tool.disable();
+    }
+  }, [editMode]);
 
   // Handle external node selection
   useEffect(() => {
