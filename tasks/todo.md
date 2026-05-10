@@ -49,6 +49,20 @@
 
 ---
 
+## Housekeeping (before Step 3)
+
+- **Branch**: `chore/track-lockfile-and-eslint` (off main, after fix/websocket-reconnection merged)
+- Track `frontend/package-lock.json` in git
+- Create `eslint.config.js` for ESLint 9 — linter must be green before Step 3
+- Atomic commits: one for lockfile, one for ESLint config
+
+## Branch Strategy
+
+- `fix/websocket-reconnection` → merge to main first (Steps 1-2)
+- `chore/track-lockfile-and-eslint` → merge to main second
+- `feat/graph-editing` → off main after both above are merged (Steps 3-4)
+- No stacking. Reviews stay small and focused.
+
 ## Risks and Unknowns
 
 - `cytoscape-edgehandles` last release was Jul 2021 — Step 0 spike validates this
