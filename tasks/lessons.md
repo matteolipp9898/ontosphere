@@ -1,0 +1,14 @@
+# OntoSphere — Lessons Learned
+
+<!-- Append entries as work progresses. Each entry: date, step, what happened. -->
+
+## 2026-05-10 — Step 0: Spike — cytoscape-edgehandles + cytoscape-context-menus
+
+**Result: GREEN (works)**
+
+Both `cytoscape-edgehandles@4.0.1` and `cytoscape-context-menus@4.2.1` install, type-check, and bundle through Vite without errors. The `@types/cytoscape-edgehandles@4.0.4` and `@types/cytoscape-context-menus@4.1.4` packages provide clean type declarations that augment the `cytoscape.Core` interface with `.edgehandles()` and `.contextMenus()` methods. CSS for context-menus imports cleanly. No runtime test was possible without the full Docker stack (Postgres + Redis), but compile-time validation is complete and strong — imports, types, and bundling all succeeded on first try.
+
+**Surprises:**
+- ESLint is broken project-wide (ESLint 9 installed but no `eslint.config.js` exists). Pre-existing, not related to the spike.
+- Several pre-existing TS strict errors exist when type-checking with `tsconfig.app.json` (unused imports, missing `@types/cytoscape-dagre`, `import.meta.env` not recognized). The project relies on Vite's looser TS handling for builds.
+- No active forks of edgehandles exist with real code changes. The 2021 release is the only viable package version.
