@@ -15,6 +15,7 @@ import Toolbar from "@/components/Toolbar";
 import GraphViewer from "@/components/GraphViewer";
 import NodePanel from "@/components/NodePanel";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
+import ConnectionBanner from "@/components/ConnectionBanner";
 import ValidationPanel from "@/components/ValidationPanel";
 import { Button } from "@/components/ui/button";
 import { Loader2, AlertTriangle } from "lucide-react";
@@ -186,6 +187,12 @@ export default function OntologyEditor() {
             searchQuery={searchQuery}
             editMode={editMode}
             selectedNodeId={selectedNodeId}
+          />
+
+          {/* Connection Status Banner */}
+          <ConnectionBanner
+            connectionState={connectionState}
+            onReconnect={reconnectNow}
           />
 
           {/* Processing Overlay */}
