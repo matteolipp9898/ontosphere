@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useMemo } from "react";
+import { useRef, useEffect, useMemo } from "react";
 import cytoscape, { Core, EventObject } from "cytoscape";
 import dagre from "cytoscape-dagre";
 import { GraphData } from "@/types/ontology";
@@ -45,13 +45,13 @@ const EDGE_STYLES: Record<string, { lineColor: string; lineStyle: string }> = {
   DISJOINT_WITH: { lineColor: "#ef4444", lineStyle: "dashed" },
 };
 
-const DEFAULT_EDGE_STYLE = { lineColor: "#9ca3af", lineStyle: "solid" };
+const _DEFAULT_EDGE_STYLE = { lineColor: "#9ca3af", lineStyle: "solid" };
 
 export default function GraphViewer({
   data,
   onNodeSelect,
   searchQuery,
-  editMode,
+  editMode: _editMode,
   selectedNodeId,
 }: GraphViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
