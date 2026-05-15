@@ -25,6 +25,8 @@ const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
 /** Retry interval once in dormant mode. */
 const DORMANT_INTERVAL_MS = 60_000;
+/** Connection must stay open this long before backoff counters reset. */
+const STABLE_CONNECTION_MS = 5_000;
 
 export function useWebSocket(ontologyId: string | undefined): UseWebSocketReturn {
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
@@ -35,6 +37,7 @@ export function useWebSocket(ontologyId: string | undefined): UseWebSocketReturn
   const retriesRef = useRef(0);
   const backoffRef = useRef(INITIAL_BACKOFF_MS);
   const unmountedRef = useRef(false);
+  const stableTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const resetBackoff = useCallback(() => {
     retriesRef.current = 0;
@@ -70,7 +73,14 @@ export function useWebSocket(ontologyId: string | undefined): UseWebSocketReturn
       wsRef.current = null;
     }
 
-    setConnectionState("connecting");
+    // Only show "connecting" for the initial attempt.
+    // During retries, preserve current state (disconnected/dormant)
+    // so the ConnectionBanner remains visible.
+    if (retriesRef.current === 0) {
+      setConnectionState("connecting");
+    }
+
+    clearTimeout(stableTimerRef.current);
 
     const wsBase =
       import.meta.env.VITE_WS_BASE_URL ??
@@ -83,7 +93,9 @@ export function useWebSocket(ontologyId: string | undefined): UseWebSocketReturn
     ws.addEventListener("open", () => {
       if (unmountedRef.current) return;
       setConnectionState("connected");
-      resetBackoff();
+      // Only reset backoff after connection proves stable.
+      // Prevents connect-then-drop cycles from resetting retry count.
+      stableTimerRef.current = setTimeout(resetBackoff, STABLE_CONNECTION_MS);
     });
 
     ws.addEventListener("message", (event: MessageEvent) => {
@@ -100,6 +112,7 @@ export function useWebSocket(ontologyId: string | undefined): UseWebSocketReturn
 
     ws.addEventListener("close", () => {
       if (unmountedRef.current) return;
+      clearTimeout(stableTimerRef.current);
       wsRef.current = null;
       scheduleReconnect(connect);
     });
@@ -123,6 +136,7 @@ export function useWebSocket(ontologyId: string | undefined): UseWebSocketReturn
     return () => {
       unmountedRef.current = true;
       clearTimeout(reconnectTimeoutRef.current);
+      clearTimeout(stableTimerRef.current);
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
