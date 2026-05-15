@@ -52,7 +52,7 @@ export default function OntologyEditor() {
   const createVersion = useCreateVersion(ontologyId!);
 
   // WebSocket for live updates during processing
-  const { lastMessage, isConnected } = useWebSocket(ontologyId!);
+  const { lastMessage } = useWebSocket(ontologyId!);
 
   // Handle WebSocket messages for status updates
   useEffect(() => {
