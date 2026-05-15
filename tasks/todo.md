@@ -1,51 +1,58 @@
 # OntoSphere — Implementation Plan
 
-## Step 0: Spike — Cytoscape Extensions Compatibility
+## Step 0: Spike — Cytoscape Extensions Compatibility  **DONE**
 
-- **Branch**: `spike/cytoscape-extensions`
-- **Timebox**: 2-3 hours max
-- Install `cytoscape-edgehandles@4.0.1` + `@types/cytoscape-edgehandles@4.0.4`
-- Install `cytoscape-context-menus@4.2.1` + `@types/cytoscape-context-menus@4.1.4`
-- Verify both initialize without errors and basic functionality works (drag-to-connect, right-click menu shows)
-- **Output**: short report (works / works-with-quirks / broken + fork available y/n)
-- If spike fails: either use a fork or implement drag-to-connect manually (~100-150 lines)
+- Merged to main: 2026-05-15
+- Both `cytoscape-edgehandles@4.0.1` and `cytoscape-context-menus@4.2.1` work with Cytoscape.js v3.30
+- Wrapped in adapter interfaces (`IConnectionTool`, `IGraphContextMenu`) for swapability
 
-## Step 1: WebSocket Reconnection — Exponential Backoff + Dormant Mode
+## Step 1: WebSocket Reconnection — Exponential Backoff + Dormant Mode  **DONE**
 
-- **Branch**: `fix/websocket-reconnection`
-- **One commit**: `fix: robust WebSocket reconnection with exponential backoff`
-- Refactor `useWebSocket.ts`:
-  - Backoff: 1s → 2s → 4s → 8s → 16s → 30s (cap)
-  - 5 active retries, then switch to dormant mode (60s interval)
-  - Connection state enum: `'connecting' | 'connected' | 'disconnected' | 'dormant'`
-  - Reset backoff on successful connection
-  - No hard cutoff — dormant mode retries indefinitely at 60s
-- No resync logic needed: REST poll (`useOntologyStatus` with `refetchInterval: 2000`) already covers state recovery
+- Merged to main: 2026-05-15 (`7f10a2b`)
+- Branch: `fix/websocket-reconnection` (deleted)
+- Backoff: 1s -> 2s -> 4s -> 8s -> 16s -> 30s cap, then dormant at 60s
+- Bug fix: banner stays visible during retries (no flicker); dormant mode reachable on unstable connections (`2861f10`)
+- Stable connection threshold: backoff only resets after 5s of sustained connection
 
-## Step 2: Connection Status Banner in Editor
+## Step 2: Connection Status Banner in Editor  **DONE**
 
-- **Branch**: same as Step 1 or stacked
-- **One commit**: `feat: show connection status in editor`
-- Subtle banner in `OntologyEditor.tsx` for disconnected/reconnecting/dormant states
-- "Reconnect now" button to wake from dormant mode
-- No intrusive modals — small inline indicator
+- Merged with Step 1 (`7f10a2b`)
+- `ConnectionBanner.tsx`: amber banner for disconnected/dormant, "Reconnect Now" button in dormant mode
+- Smoke tested 2026-05-15: all 4 critical checks passed
 
-## Step 3: Drag-to-Connect Edges via cytoscape-edgehandles
+## Step 3: Drag-to-Connect Edges via cytoscape-edgehandles  **DONE**
 
-- **Branch**: `feat/graph-editing`
-- **Commit**: `feat: add drag-to-connect edges via cytoscape-edgehandles`
-- Gate on `editMode` prop in `GraphViewer.tsx`
-- Wire edge completion to existing `useAddRelationship` mutation
-- **LOCK-IN**: Wrap edgehandles in an `IConnectionTool` adapter interface (single-file swap if the plugin ever breaks or needs replacing with a manual implementation)
+- Merged to main: 2026-05-15 (`8bd5ddb`)
+- Branch: `feat/graph-editing` (deleted)
+- `IConnectionTool` adapter in `graph/ConnectionTool.ts` — single-file swap point
+- Gated on `editMode`, wired to `useAddRelationship` mutation
 
-## Step 4: Right-Click Context Menus for Graph Editing
+## Step 4: Right-Click Context Menus for Graph Editing  **DONE**
 
-- **Branch**: same as Step 3 or stacked
-- **Commit**: `feat: add right-click context menus for graph editing`
-- **LOCK-IN**: Use `cytoscape-context-menus` (traditional dropdown), NOT `cytoscape-cxtmenu` (radial)
-- Node menu: edit label, delete, add relationship
-- Canvas background menu: add new class
-- Wire actions to existing API hooks (`useUpdateClass`, `useDeleteClass`, `useAddClass`, `useAddRelationship`)
+- Merged with Step 3 (`8bd5ddb`)
+- `IGraphContextMenu` adapter in `graph/GraphContextMenu.ts`
+- Node menu: edit, delete (with confirmation dialog), add relationship
+- Canvas menu: add new class (via `AddClassDialog`)
+
+## Housekeeping  **DONE**
+
+- Merged to main: 2026-05-15 (`4a28af9`)
+- Branch: `chore/track-lockfile-and-eslint` (deleted)
+- ESLint 9 flat config (`eslint.config.js`), all lint errors fixed
+- `package-lock.json` tracked
+
+---
+
+## What's Next — Candidate Features (not started)
+
+### N1: AddClassDialog UX improvements (small, ~1 session)
+Auto-slug URI from label using `{ontology.namespace_uri}{slugify(label)}`, editable for override. Thread `namespace_uri` into dialog. See Q1 review notes below.
+
+### N2: Relationship type picker in drag-to-connect flow (small, ~1 session)
+Currently drag-to-connect defaults to `RELATED_TO`. Add a small popover after edge drop to pick from available relationship types (subClassOf, partOf, etc.). Alternatively, activate edgehandles from the context menu "Add Relationship From..." action (see Q2 below).
+
+### N3: Undo/redo for graph editing operations (medium, ~2-3 sessions)
+Track mutations in a client-side stack. Undo calls the inverse API operation (delete edge that was added, re-add class that was deleted). Scoped to the current editing session. Requires careful thought about conflict with server-side state from other clients.
 
 ---
 
@@ -70,10 +77,8 @@ Currently this action **selects the node and opens the NodePanel side panel in e
 
 ## Branch Strategy
 
-- `fix/websocket-reconnection` → merge to main first (Steps 1-2)
-- `chore/track-lockfile-and-eslint` → merge to main second
-- `feat/graph-editing` → off main after both above are merged (Steps 3-4)
-- No stacking. Reviews stay small and focused.
+- All branches merged to main as of 2026-05-15. No open branches.
+- Future work: new branches off main, no stacking, small focused PRs.
 
 ## Risks and Unknowns
 
