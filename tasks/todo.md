@@ -49,6 +49,18 @@
 
 ---
 
+## Review Notes for Steps 3-4 (pre-merge)
+
+### Q1: AddClassDialog URI strategy
+
+Currently **pure manual input** — the user types both URI and label from scratch. There is no auto-slug from label, no default namespace prefix, and no validation beyond "both fields required." This was the minimal viable approach. If we want a better UX, the recommended improvement is: pre-fill the URI field with `{ontology.namespace_uri}{slugify(label)}` as the user types the label, but leave it editable for override. This requires threading the ontology's `namespace_uri` into the AddClassDialog (currently it only receives `open`, `onOpenChange`, `onSubmit`, `isPending`). This is a small change (~10 lines) but was deliberately deferred to keep the Step 4 commit focused on context menu wiring.
+
+### Q2: "Add Relationship From..." target selection
+
+Currently this action **selects the node and opens the NodePanel side panel in edit mode**, where the existing "Add Relationship" form (with a target dropdown and relationship type selector) is already available. It does NOT activate edgehandles drag-mode from that source node. The UX is: right-click node → "Add Relationship From..." → side panel opens with the node selected → user picks target and type from dropdowns → clicks "Add Relationship." If drag-mode activation is preferred, the change would be: call `connectionToolRef.current.start(sourceNode)` via a new callback from OntologyEditor, which programmatically begins the edgehandles gesture from that node. The edgehandles API supports this via `eh.start(sourceNode)`. This is ~5 lines of wiring but changes the UX significantly — the user would drag to a target node instead of picking from a dropdown, and the relationship type would default to RELATED_TO (no type picker in the drag flow).
+
+---
+
 ## Housekeeping (before Step 3)
 
 - **Branch**: `chore/track-lockfile-and-eslint` (off main, after fix/websocket-reconnection merged)

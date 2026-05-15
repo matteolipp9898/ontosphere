@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   useOntology,
@@ -7,17 +7,31 @@ import {
   downloadExport,
   useCreateVersion,
   useOntologyStatus,
+  useAddRelationship,
+  useDeleteClass,
+  useAddClass,
 } from "@/api/ontologies";
 import { useOntologyStore } from "@/store/ontologyStore";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import type { GraphNode } from "@/types/ontology";
+import type { EdgeCreateEvent } from "@/components/graph/ConnectionTool";
+import type { GraphMenuActions } from "@/components/graph/GraphContextMenu";
 import Toolbar from "@/components/Toolbar";
 import GraphViewer from "@/components/GraphViewer";
 import NodePanel from "@/components/NodePanel";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
 import ConnectionBanner from "@/components/ConnectionBanner";
+import AddClassDialog from "@/components/AddClassDialog";
 import ValidationPanel from "@/components/ValidationPanel";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -51,6 +65,17 @@ export default function OntologyEditor() {
 
   const validateOntology = useValidateOntology(ontologyId!);
   const createVersion = useCreateVersion(ontologyId!);
+  const addRelationship = useAddRelationship(ontologyId!);
+  const deleteClass = useDeleteClass(ontologyId!);
+  const addClass = useAddClass(ontologyId!);
+
+  // State for context menu actions
+  const [addClassDialogOpen, setAddClassDialogOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    nodeId: string;
+    nodeUri: string;
+    nodeLabel: string;
+  } | null>(null);
 
   // WebSocket for live updates during processing
   const { lastMessage, connectionState, reconnectNow } = useWebSocket(ontologyId!);
@@ -93,6 +118,22 @@ export default function OntologyEditor() {
     toggleEditMode();
   }, [toggleEditMode]);
 
+  const handleEdgeCreate = useCallback(
+    async (event: EdgeCreateEvent) => {
+      try {
+        await addRelationship.mutateAsync({
+          source_uri: event.sourceUri,
+          target_uri: event.targetUri,
+          relationship_type: "RELATED_TO",
+        });
+        toast.success("Relationship created");
+      } catch {
+        toast.error("Failed to create relationship");
+      }
+    },
+    [addRelationship],
+  );
+
   const handleSearchChange = useCallback(
     (q: string) => {
       setSearchQuery(q);
@@ -125,6 +166,56 @@ export default function OntologyEditor() {
       }
     },
     [ontologyId, ontology?.name],
+  );
+
+  // Context menu action handlers
+  const handleContextDeleteNode = useCallback(
+    async (nodeUri: string) => {
+      try {
+        await deleteClass.mutateAsync(nodeUri);
+        toast.success("Node deleted");
+        setSelectedNode(null);
+        setDeleteConfirm(null);
+      } catch {
+        toast.error("Failed to delete node");
+      }
+    },
+    [deleteClass, setSelectedNode],
+  );
+
+  const handleContextAddClass = useCallback(
+    async (uri: string, label: string, description?: string) => {
+      try {
+        await addClass.mutateAsync({ uri, label, description });
+        toast.success("Class added");
+        setAddClassDialogOpen(false);
+      } catch {
+        toast.error("Failed to add class");
+      }
+    },
+    [addClass],
+  );
+
+  const menuActions: GraphMenuActions = useMemo(
+    () => ({
+      onSelectForEdit: (nodeId: string) => {
+        setSelectedNode(nodeId);
+        setSidePanel("details");
+        if (!editMode) toggleEditMode();
+      },
+      onDeleteNode: (nodeId: string, nodeUri: string, nodeLabel: string) => {
+        setDeleteConfirm({ nodeId, nodeUri, nodeLabel });
+      },
+      onAddRelationshipFrom: (nodeId: string) => {
+        setSelectedNode(nodeId);
+        setSidePanel("details");
+        if (!editMode) toggleEditMode();
+      },
+      onAddClass: () => {
+        setAddClassDialogOpen(true);
+      },
+    }),
+    [setSelectedNode, setSidePanel, editMode, toggleEditMode],
   );
 
   const handleCreateVersion = useCallback(async () => {
@@ -184,6 +275,8 @@ export default function OntologyEditor() {
           <GraphViewer
             data={graphData ?? { nodes: [], edges: [] }}
             onNodeSelect={handleNodeSelect}
+            onEdgeCreate={handleEdgeCreate}
+            menuActions={menuActions}
             searchQuery={searchQuery}
             editMode={editMode}
             selectedNodeId={selectedNodeId}
@@ -252,6 +345,39 @@ export default function OntologyEditor() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog (context menu) */}
+      <Dialog open={deleteConfirm !== null} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Node</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete &quot;{deleteConfirm?.nodeLabel}&quot;? This will
+              also remove all connected relationships. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteConfirm && handleContextDeleteNode(deleteConfirm.nodeUri)}
+              disabled={deleteClass.isPending}
+            >
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Class Dialog (context menu) */}
+      <AddClassDialog
+        open={addClassDialogOpen}
+        onOpenChange={setAddClassDialogOpen}
+        onSubmit={handleContextAddClass}
+        isPending={addClass.isPending}
+      />
     </div>
   );
 }
