@@ -64,7 +64,7 @@ export default function GraphViewer({
   onEdgeCreate,
   menuActions,
   searchQuery,
-  editMode: _editMode,
+  editMode,
   selectedNodeId,
 }: GraphViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
