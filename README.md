@@ -1,43 +1,123 @@
 # OntoSphere
 
-**Generate OWL/RDF ontologies from documents with LLMs.**
+**Turn documents into navigable knowledge graphs.**
+
+OntoSphere is an open-source tool that extracts structured ontologies from unstructured documents using LLMs. Upload a PDF, and it identifies classes, properties, and relationships -- then assembles them into an OWL/RDF knowledge graph you can explore, visually edit, and export. Built for anyone working with agentic systems, semantic layers, GraphRAG pipelines, or domain-specific ontologies.
+
+![OntoSphere editor with graph visualization](docs/screenshots/editor-graph.png)
 
 ---
 
-## Overview
+## What's New in v0.2.0
 
-OntoSphere is an open-source application that transforms unstructured documents into structured ontologies. Upload a PDF, and OntoSphere uses LLMs to extract entities, relationships, and properties -- then assembles them into a navigable knowledge graph that you can explore, edit, and export.
+- **Visual graph editing** -- drag-to-connect edges between classes, right-click context menus on nodes and canvas
+- **Edit mode toggle** -- switch between Viewing and Editing modes from the toolbar
+- **Add classes and relationships visually** -- no scripts, no config files
+- **Robust WebSocket reconnection** -- exponential backoff with dormant mode and manual retry button
+- **Connection status banner** -- non-intrusive indicator when live updates are unavailable
 
 ## Features
 
-- **Document upload** -- Upload PDF files; text is extracted and chunked automatically.
-- **AI-powered extraction** -- LLMs (Azure OpenAI gpt-4o) identify classes, properties, and relationships with full provenance tracking.
-- **Navigable graph** -- Explore ontologies in an interactive Cytoscape.js force-directed graph with pan, zoom, and node inspection.
-- **Multi-format export** -- Export to JSON, Turtle (TTL), JSON-LD, and RDF/XML.
-- **SHACL validation** -- Validate generated ontologies against SHACL shape constraints.
-- **Ontology versioning** -- Every generation creates a version snapshot for comparison and rollback.
-- **Real-time progress** -- WebSocket-based progress updates during processing.
-- **Background processing** -- Long-running extraction jobs are handled asynchronously via Celery workers.
+### Document-to-Ontology Pipeline
 
-## Screenshots
+Upload a PDF and let LLMs (Azure OpenAI, OpenAI, or Anthropic) extract entities, properties, and relationships with full provenance tracking. Processing runs asynchronously via Celery workers with real-time progress updates over WebSocket.
 
-# ![Dashboard](docs/screenshots/dashboard.png)
-# ![Graph Export Formats](docs/screenshots/graph-export-formats.png)
-# ![Graph Search Node](docs/screenshots/search-node.png)
-# ![Version History](docs/screenshots/version-history.png)
+### Visual Graph Editing
 
+Toggle edit mode to modify your ontology directly on the graph canvas. Right-click nodes to edit, delete, or start a new relationship. Right-click empty space to add a new class. Drag between nodes to connect them.
+
+<p align="center">
+  <img src="docs/screenshots/add-relationship-context.png" alt="Right-click context menu" width="48%">
+  <img src="docs/screenshots/add-class-dialog.png" alt="Add Class dialog" width="48%">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/add-relationship-dialog.png" alt="Add Relationship dialog" width="48%">
+  <img src="docs/screenshots/ontology-detail.png" alt="Ontology editor detail view" width="48%">
+</p>
+
+### Ontology Browser
+
+Browse and manage your ontologies from the dashboard. Each ontology tracks its processing status, document count, and version history.
+
+![Ontology list](docs/screenshots/ontology-list.png)
+
+### Search and Inspect
+
+Search for classes by name and inspect node properties, relationships, and provenance in the side panel.
+
+![Search node](docs/screenshots/search-node.png)
+
+### Multi-Format Export
+
+Export to JSON, Turtle (TTL), JSON-LD, and RDF/XML for use in downstream tools and triple stores.
+
+![Export formats](docs/screenshots/graph-export-formats.png)
+
+### Versioning
+
+Every generation and edit creates a version snapshot. Compare versions and roll back when needed.
+
+![Version history](docs/screenshots/version-history.png)
+
+### SHACL Validation
+
+Validate generated ontologies against SHACL shape constraints. Violations are surfaced directly in the editor.
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+| Dependency     | Version | Notes                              |
+|----------------|---------|------------------------------------|
+| Docker         | 20.10+  | Required                           |
+| Docker Compose | 2.0+    | Required                           |
+| LLM API key   | --      | Azure OpenAI, OpenAI, or Anthropic |
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/boricles/ontosphere.git
+cd ontosphere
+
+# Create your environment file
+cp .env.example .env
+
+# Edit .env and set your LLM API key:
+#   ONTOSPHERE_LLM_API_KEY=your-actual-key
+#   ONTOSPHERE_LLM_API_BASE=https://YOUR-RESOURCE.openai.azure.com
+
+# Start all services
+docker compose up --build -d
+
+# Open the application
+#   Frontend:  http://localhost:5173
+#   API docs:  http://localhost:8000/docs
+```
+
+Database tables are created automatically on first startup.
+
+```bash
+docker compose down        # stop, keep data
+docker compose down -v     # stop, wipe data
+```
+
+---
 
 ## Tech Stack
 
-| Layer     | Technology                                              |
-|-----------|---------------------------------------------------------|
-| Frontend  | React 18, TypeScript, Vite, Cytoscape.js, Tailwind CSS |
-| Backend   | Python 3.11, FastAPI, SQLAlchemy 2.0 (async), Pydantic v2 |
-| Database  | PostgreSQL 16 + Apache AGE (graph queries)              |
-| Queue     | Redis + Celery                                          |
-| LLM       | Azure OpenAI / OpenAI / Anthropic (pluggable)           |
-| Export    | RDFLib (Turtle, JSON-LD, RDF/XML)                       |
-| Validation| pyshacl (SHACL shapes)                                  |
+| Layer      | Technology                                                |
+|------------|-----------------------------------------------------------|
+| Frontend   | React 18, TypeScript, Vite, Cytoscape.js, Tailwind CSS   |
+| Backend    | Python 3.11, FastAPI, SQLAlchemy 2.0 (async), Pydantic v2|
+| Database   | PostgreSQL 16 + Apache AGE (graph queries)                |
+| Queue      | Redis + Celery                                            |
+| LLM        | Azure OpenAI / OpenAI / Anthropic (pluggable)             |
+| Export     | RDFLib (Turtle, JSON-LD, RDF/XML)                         |
+| Validation | pyshacl (SHACL shapes)                                    |
 
 ## Architecture
 
@@ -69,89 +149,32 @@ OntoSphere is an open-source application that transforms unstructured documents 
                                 +-------------+
 ```
 
-## Quick Start
-
-### Prerequisites
-
-| Dependency      | Version  | Notes                              |
-|-----------------|----------|------------------------------------|
-| Docker          | 20.10+   | Required                           |
-| Docker Compose  | 2.0+     | Required                           |
-| LLM API key     | --       | Azure OpenAI, OpenAI, or Anthropic |
-
-### Setup
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/your-org/ontosphere.git
-cd ontosphere
-
-# 2. Create your environment file
-cp .env.example .env
-
-# 3. Edit .env and set your LLM API key
-#    ONTOSPHERE_LLM_API_KEY=your-actual-key
-#    ONTOSPHERE_LLM_API_BASE=https://YOUR-RESOURCE.cognitiveservices.azure.com
-
-# 4. Start all services
-docker compose up --build
-
-# 5. Open the application
-#    Frontend:  http://localhost:5173
-#    API docs:  http://localhost:8000/docs
-```
-
-Database tables are created automatically on first startup (`ONTOSPHERE_AUTO_CREATE_TABLES=true`).
-
-To stop all services:
-
-```bash
-docker compose down        # keep data
-docker compose down -v     # wipe data
-```
+---
 
 ## Configuration
 
-All configuration is done through environment variables. Copy `.env.example` to `.env` and adjust as needed.
+All configuration is via environment variables. Copy `.env.example` to `.env` and adjust.
 
-| Variable                          | Default                                                        | Description                                      |
-|-----------------------------------|----------------------------------------------------------------|--------------------------------------------------|
-| `POSTGRES_USER`                   | `ontosphere`                                                   | PostgreSQL user                                  |
-| `POSTGRES_PASSWORD`               | `changeme`                                                     | PostgreSQL password                              |
-| `POSTGRES_DB`                     | `ontosphere`                                                   | PostgreSQL database name                         |
-| `DATABASE_URL`                    | `postgresql+asyncpg://ontosphere:changeme@postgres:5432/ontosphere` | Async SQLAlchemy connection string          |
-| `REDIS_URL`                       | `redis://redis:6379/0`                                         | Redis connection URL for Celery and pub/sub      |
-| `ONTOSPHERE_LLM_PROVIDER`        | `azure`                                                        | LLM provider (`openai`, `azure`, `anthropic`)    |
-| `ONTOSPHERE_LLM_API_BASE`        | --                                                             | Base URL for the LLM API                         |
-| `ONTOSPHERE_LLM_API_KEY`         | --                                                             | API key for the LLM provider                     |
-| `ONTOSPHERE_LLM_MODEL`           | `gpt-4o`                                                       | Model / deployment name                          |
-| `ONTOSPHERE_LLM_API_VERSION`     | `2024-10-21`                                                   | API version (Azure OpenAI)                       |
-| `ONTOSPHERE_LLM_MAX_TOKENS`      | `16384`                                                        | Max output tokens for LLM responses              |
-| `ONTOSPHERE_AUTO_CREATE_TABLES`  | `true`                                                         | Auto-create tables on startup                    |
-| `CORS_ORIGINS`                    | `http://localhost:5173,http://localhost:3000`                   | Allowed CORS origins                             |
-| `SECRET_KEY`                      | `change-me-in-production`                                      | Secret key for signing                           |
+| Variable                       | Default       | Description                            |
+|--------------------------------|---------------|----------------------------------------|
+| `ONTOSPHERE_LLM_PROVIDER`     | `azure`       | `openai`, `azure`, or `anthropic`      |
+| `ONTOSPHERE_LLM_API_BASE`     | --            | Base URL for the LLM API               |
+| `ONTOSPHERE_LLM_API_KEY`      | --            | API key for the LLM provider           |
+| `ONTOSPHERE_LLM_MODEL`        | `gpt-4o`      | Model / deployment name                |
+| `DATABASE_URL`                 | (see .env)    | Async SQLAlchemy connection string     |
+| `REDIS_URL`                    | `redis://redis:6379/0` | Redis for Celery and pub/sub  |
+| `CORS_ORIGINS`                 | `localhost:*` | Allowed CORS origins                   |
+
+See `.env.example` for the full list.
 
 ## API Documentation
 
-When the backend is running, interactive API documentation is available at:
+Interactive API docs are available when the backend is running:
 
 - **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
 - **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 
-### Core Endpoints
-
-| Method | Endpoint                            | Description                        |
-|--------|-------------------------------------|------------------------------------|
-| GET    | `/api/health`                       | Health check                       |
-| POST   | `/api/ontologies`                   | Create a new ontology              |
-| GET    | `/api/ontologies`                   | List all ontologies                |
-| GET    | `/api/ontologies/{id}`              | Get ontology details               |
-| PUT    | `/api/ontologies/{id}`              | Update an ontology                 |
-| DELETE | `/api/ontologies/{id}`              | Delete an ontology                 |
-| POST   | `/api/ontologies/{id}/documents`    | Upload a document for processing   |
-| POST   | `/api/ontologies/{id}/generate`     | Trigger ontology generation        |
-| GET    | `/api/ontologies/{id}/graph`        | Get the ontology graph data        |
-| GET    | `/api/ontologies/{id}/export/{fmt}` | Export (json, turtle, jsonld, rdfxml) |
+---
 
 ## Development Setup (Without Docker)
 
@@ -162,10 +185,10 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-
-# Start a local PostgreSQL with the AGE extension and Redis, then:
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+Requires a local PostgreSQL with Apache AGE extension and Redis.
 
 ### Frontend
 
@@ -175,44 +198,13 @@ npm install
 npm run dev
 ```
 
-### Running Tests
+### Tests
 
 ```bash
-cd backend
-pytest -v
+cd backend && pytest -v
 ```
 
-## Project Structure
-
-```
-ontosphere/
-├── backend/
-│   ├── app/
-│   │   ├── api/            # FastAPI route handlers
-│   │   ├── models/         # SQLAlchemy ORM models
-│   │   ├── schemas/        # Pydantic request/response schemas
-│   │   ├── services/       # Business logic (graph, document, LLM, export)
-│   │   ├── tasks/          # Celery async tasks
-│   │   └── main.py         # FastAPI application entry point
-│   ├── tests/
-│   ├── Dockerfile
-│   └── pyproject.toml
-├── frontend/
-│   ├── src/
-│   │   ├── components/     # React UI components
-│   │   ├── api/            # API client functions
-│   │   ├── hooks/          # Custom React hooks (WebSocket, etc.)
-│   │   └── App.tsx
-│   ├── Dockerfile
-│   └── package.json
-├── docs/screenshots/
-├── docker-compose.yml
-├── .env.example
-├── .gitignore
-├── CHANGELOG.md
-├── LICENSE
-└── README.md
-```
+---
 
 ## Roadmap
 
@@ -226,21 +218,29 @@ ontosphere/
 - [x] Ontology versioning
 - [x] Real-time progress via WebSocket
 - [x] Docker Compose orchestration
-- [ ] Authentication and authorization (OAuth 2.0 / OIDC)
-- [ ] Robust WebSocket reconnect handling
+- [x] Robust WebSocket reconnect with dormant mode
+- [x] Visual graph editing (drag-to-connect, context menus)
+- [ ] Auto-generate class URIs from labels
+- [ ] Relationship type picker in drag-to-connect flow
+- [ ] Undo/redo for graph editing operations
 - [ ] SHACL violation visualization in graph editor
+- [ ] Authentication and authorization (OAuth 2.0 / OIDC)
 - [ ] Multi-user / multi-tenant support
 
 ## Contributing
 
-Contributions are welcome! Please:
+Contributions are welcome. Please:
 
-1. Fork the repository.
-2. Create a feature branch: `git checkout -b feature/my-feature`.
-3. Make your changes and add tests.
-4. Ensure all tests pass: `cd backend && pytest -v`.
-5. Open a Pull Request against `main`.
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Make your changes and add tests
+4. Ensure tests pass: `cd backend && pytest -v`
+5. Open a Pull Request against `main`
 
 ## License
 
 This project is licensed under the **Apache License 2.0**. See [LICENSE](LICENSE) for the full text.
+
+---
+
+Built by [Boris Villazon-Terrazas, PhD](https://www.linkedin.com/in/boris-villazon-terrazas-phd/) ([@boricles](https://github.com/boricles)).
