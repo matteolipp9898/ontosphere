@@ -148,7 +148,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(
     title="OntoSphere API",
-    version="0.1.1",
+    version="0.2.0",
     description="Generate ontologies from documents using LLMs.",
     lifespan=lifespan,
     redirect_slashes=False,
