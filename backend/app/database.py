@@ -220,3 +220,38 @@ async def execute_age_query(
         )
         await session.rollback()
         raise
+
+
+# ---------------------------------------------------------------------------
+# Neo4j driver (optional, used when GRAPH_BACKEND=neo4j)
+# ---------------------------------------------------------------------------
+
+_neo4j_driver: Any = None
+
+
+async def get_neo4j_driver() -> Any:
+    """Get or create the singleton Neo4j async driver.
+
+    Only imports the ``neo4j`` package when called (lazy), so projects
+    using AGE-only don't need it installed.
+    """
+    global _neo4j_driver  # noqa: PLW0603
+    if _neo4j_driver is None:
+        from neo4j import AsyncGraphDatabase  # type: ignore[import-untyped]
+
+        _neo4j_driver = AsyncGraphDatabase.driver(
+            settings.NEO4J_URI,
+            auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD),
+        )
+        logger.info("Neo4j async driver created for %s", settings.NEO4J_URI)
+    return _neo4j_driver
+
+
+async def close_neo4j_driver() -> None:
+    """Close the Neo4j driver if it was initialized."""
+    global _neo4j_driver  # noqa: PLW0603
+    if _neo4j_driver is not None:
+        await _neo4j_driver.close()
+        _neo4j_driver = None
+        logger.info("Neo4j driver closed.")
+

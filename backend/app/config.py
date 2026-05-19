@@ -67,6 +67,29 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://ontosphere:ontosphere@localhost:5432/ontosphere"
     )
 
+    # -- Graph backend --
+    GRAPH_BACKEND: str = Field(
+        default="age",
+        description="Graph storage backend: 'age' (Apache AGE) or 'neo4j'",
+        validation_alias=AliasChoices("ONTOSPHERE_GRAPH_BACKEND", "GRAPH_BACKEND"),
+    )
+    NEO4J_URI: str = Field(
+        default="bolt://localhost:7687",
+        validation_alias=AliasChoices("ONTOSPHERE_NEO4J_URI", "NEO4J_URI"),
+    )
+    NEO4J_USER: str = Field(
+        default="neo4j",
+        validation_alias=AliasChoices("ONTOSPHERE_NEO4J_USER", "NEO4J_USER"),
+    )
+    NEO4J_PASSWORD: str = Field(
+        default="ontosphere",
+        validation_alias=AliasChoices("ONTOSPHERE_NEO4J_PASSWORD", "NEO4J_PASSWORD"),
+    )
+    NEO4J_DATABASE: str = Field(
+        default="neo4j",
+        validation_alias=AliasChoices("ONTOSPHERE_NEO4J_DATABASE", "NEO4J_DATABASE"),
+    )
+
     # -- Redis / Celery --
     REDIS_URL: str = "redis://localhost:6379/0"
 
@@ -116,6 +139,11 @@ class Settings(BaseSettings):
         if self.LLM_PROVIDER not in allowed:
             raise ValueError(
                 f"LLM_PROVIDER must be one of {allowed}, got {self.LLM_PROVIDER!r}"
+            )
+        allowed_backends = {"age", "neo4j"}
+        if self.GRAPH_BACKEND not in allowed_backends:
+            raise ValueError(
+                f"GRAPH_BACKEND must be one of {allowed_backends}, got {self.GRAPH_BACKEND!r}"
             )
         return self
 

@@ -67,15 +67,30 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
                 exc_info=True,
             )
 
-    # Initialise database (AGE extension, default graph).
-    try:
-        await init_db()
-    except Exception:
-        logger.warning(
-            "Database initialisation failed -- AGE extension may not be available. "
-            "The app will continue without graph support.",
-            exc_info=True,
-        )
+    # Initialise database (AGE extension, default graph) — only for AGE backend.
+    if settings.GRAPH_BACKEND == "age":
+        try:
+            await init_db()
+        except Exception:
+            logger.warning(
+                "Database initialisation failed -- AGE extension may not be available. "
+                "The app will continue without graph support.",
+                exc_info=True,
+            )
+    elif settings.GRAPH_BACKEND == "neo4j":
+        try:
+            from app.database import get_neo4j_driver
+
+            driver = await get_neo4j_driver()
+            # Verify connectivity
+            async with driver.session() as neo_session:
+                await neo_session.run("RETURN 1")
+            logger.info("Neo4j connectivity verified.")
+        except Exception:
+            logger.warning(
+                "Neo4j connection failed -- the app will continue without graph support.",
+                exc_info=True,
+            )
 
     # Seed the default admin user if not present.
     try:
@@ -101,43 +116,50 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         )
 
     # Backfill AGE graphs for any existing ontologies that are missing one.
-    try:
-        from app.models.ontology import Ontology
+    if settings.GRAPH_BACKEND == "age":
+        try:
+            from app.models.ontology import Ontology
 
-        async with async_session_factory() as session:
-            result = await session.execute(select(Ontology))
-            ontologies = result.scalars().all()
-            for ont in ontologies:
-                graph_name = GraphService.graph_name(ont.id)
-                try:
-                    # Check if the graph exists in ag_catalog.ag_graph
-                    row = await session.execute(
-                        text(
-                            "SELECT 1 FROM ag_catalog.ag_graph WHERE name = :name"
-                        ),
-                        {"name": graph_name},
-                    )
-                    if row.scalar_one_or_none() is None:
-                        await GraphService.create_graph(session, ont.id)
-                        logger.info(
-                            "Backfilled AGE graph '%s' for ontology %s.",
-                            graph_name,
-                            ont.id,
+            async with async_session_factory() as session:
+                result = await session.execute(select(Ontology))
+                ontologies = result.scalars().all()
+                for ont in ontologies:
+                    graph_name = GraphService.graph_name(ont.id)
+                    try:
+                        # Check if the graph exists in ag_catalog.ag_graph
+                        row = await session.execute(
+                            text(
+                                "SELECT 1 FROM ag_catalog.ag_graph WHERE name = :name"
+                            ),
+                            {"name": graph_name},
                         )
-                except Exception:
-                    logger.warning(
-                        "Failed to backfill AGE graph for ontology %s.",
-                        ont.id,
-                        exc_info=True,
-                    )
-            await session.commit()
-    except Exception:
-        logger.warning(
-            "AGE graph backfill skipped -- database or AGE extension may not be ready.",
-            exc_info=True,
-        )
+                        if row.scalar_one_or_none() is None:
+                            await GraphService.create_graph(session, ont.id)
+                            logger.info(
+                                "Backfilled AGE graph '%s' for ontology %s.",
+                                graph_name,
+                                ont.id,
+                            )
+                    except Exception:
+                        logger.warning(
+                            "Failed to backfill AGE graph for ontology %s.",
+                            ont.id,
+                            exc_info=True,
+                        )
+                await session.commit()
+        except Exception:
+            logger.warning(
+                "AGE graph backfill skipped -- database or AGE extension may not be ready.",
+                exc_info=True,
+            )
 
     yield  # Application is running.
+
+    # Shutdown
+    if settings.GRAPH_BACKEND == "neo4j":
+        from app.database import close_neo4j_driver
+
+        await close_neo4j_driver()
 
     logger.info("Shutting down OntoSphere API ...")
 

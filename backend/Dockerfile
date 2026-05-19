@@ -12,7 +12,7 @@ WORKDIR /app
 
 # Copy project metadata and install Python dependencies
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir ".[neo4j]"
 
 # Copy application code
 COPY app/ ./app/

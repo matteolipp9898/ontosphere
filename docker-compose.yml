@@ -4,7 +4,7 @@ services:
     # If PG16_latest is unavailable on your Docker Hub, try:
     # image: apache/age:release_PG16_1.5.0
     ports:
-      - "5432:5432"
+      - "5433:5432"
     environment:
       POSTGRES_USER: ontosphere
       POSTGRES_PASSWORD: ontosphere
@@ -20,11 +20,28 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5-community
+    profiles: ["neo4j"]
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/ontosphere
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p ontosphere 'RETURN 1'"]
+      interval: 10s
+      timeout: 10s
       retries: 5
 
   backend:
@@ -35,6 +52,8 @@ services:
       - .env
     environment:
       ONTOSPHERE_AUTO_CREATE_TABLES: "true"
+      DATABASE_URL: "postgresql+asyncpg://ontosphere:ontosphere@postgres:5432/ontosphere"
+      REDIS_URL: "redis://redis:6379/0"
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,6 +68,9 @@ services:
     build: ./backend
     env_file:
       - .env
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://ontosphere:ontosphere@postgres:5432/ontosphere"
+      REDIS_URL: "redis://redis:6379/0"
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,3 +96,4 @@ services:
 volumes:
   postgres_data:
   upload_data:
+  neo4j_data:

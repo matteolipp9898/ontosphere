@@ -379,7 +379,11 @@ class LLMClient:
             logger.info("Azure endpoint resolved: %s%s", self._api_base, endpoint)
             return endpoint
         # Standard OpenAI-compatible endpoint
-        endpoint = "/v1/chat/completions"
+        # Avoid doubling /v1 when the base URL already includes it
+        if self._api_base.rstrip("/").endswith("/v1"):
+            endpoint = "/chat/completions"
+        else:
+            endpoint = "/v1/chat/completions"
         logger.info("LLM endpoint resolved: %s%s", self._api_base, endpoint)
         return endpoint
 
